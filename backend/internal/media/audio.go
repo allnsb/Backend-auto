@@ -443,17 +443,24 @@ func readMDHDScale(payload []byte) (uint32, error) {
 	return scale, err
 }
 
+// readTKHD returns track_ID. Version 0 stores it at offset 12 and version 1 at
+// offset 20. The length is checked before any index so an empty box is corrupt
+// instead of a panic reachable from Inspect.
 func readTKHD(payload []byte) (uint32, error) {
-	if payload[0] == 1 {
+	if len(payload) < 16 {
+		return 0, ErrCorrupt
+	}
+	switch payload[0] {
+	case 0:
+		return binary.BigEndian.Uint32(payload[12:16]), nil
+	case 1:
 		if len(payload) < 24 {
 			return 0, ErrCorrupt
 		}
 		return binary.BigEndian.Uint32(payload[20:24]), nil
-	}
-	if len(payload) < 16 {
+	default:
 		return 0, ErrCorrupt
 	}
-	return binary.BigEndian.Uint32(payload[12:16]), nil
 }
 
 func readTFHD(payload []byte) (uint32, uint32, error) {
