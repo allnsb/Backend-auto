@@ -115,7 +115,7 @@ func testDiscussionModesAndChannels(t *testing.T, ctx context.Context, ownerPool
 		if got.err != nil {
 			t.Fatal(got.err)
 		}
-		if first.ID != "" && first != got.value {
+		if first.ID != "" && !sameStoredMessage(first, got.value) {
 			t.Fatal("channel retry duplicated message identity")
 		}
 		first = got.value
@@ -137,7 +137,7 @@ func testDiscussionModesAndChannels(t *testing.T, ctx context.Context, ownerPool
 		t.Fatalf("channel reference leaked into topic: %v", err)
 	}
 	page, err = store.ListChannelMessages(ctx, alice.ID, channel.ID, 0, 1)
-	if err != nil || len(page) != 2 || page[0] != first || page[1] != quoted {
+	if err != nil || len(page) != 2 || !sameStoredMessage(page[0], first) || !sameStoredMessage(page[1], quoted) {
 		t.Fatalf("shared history page changed canonical content: %v", err)
 	}
 	assertForumCount(t, ctx, ownerPool, `SELECT count(*) FROM odysseia.forum_entries WHERE stream_id=$1`, channel.ID, 0)
@@ -234,4 +234,16 @@ func testP3DowngradeGuard(t *testing.T, ctx context.Context, owner *pgxpool.Pool
 	if !errors.As(err, &pgError) || pgError.Code != "P0001" {
 		t.Fatalf("downgrade silently discarded P3 data: %v", err)
 	}
+}
+
+// sameStoredMessage compares the persisted text fields. Attachments are a slice,
+// so the message value itself is no longer comparable with ==.
+func sameStoredMessage(left, right message.Message) bool {
+	return left.ID == right.ID && left.StreamID == right.StreamID && left.Sequence == right.Sequence &&
+		left.AuthorID == right.AuthorID && left.Body == right.Body && left.QuoteID == right.QuoteID &&
+		left.CreatedAt.Equal(right.CreatedAt) && len(left.Attachments) == len(right.Attachments)
+}
+
+func sameStoredEntry(left, right forum.Entry) bool {
+	return sameStoredMessage(left.Message, right.Message) && left.RootID == right.RootID
 }

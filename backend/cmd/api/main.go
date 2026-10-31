@@ -9,8 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"odysseia.local/backend/internal/blob"
 	"odysseia.local/backend/internal/config"
 	"odysseia.local/backend/internal/httpapi"
+	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/postgres"
 	"odysseia.local/backend/internal/realtime"
 	"odysseia.local/backend/internal/tokenauth"
@@ -55,8 +57,29 @@ func run(ctx context.Context) error {
 	if err := forums.UseConversationMemberLimit(cfg.ConversationMemberLimit); err != nil {
 		return err
 	}
+	objects, err := blob.NewR2(ctx, blob.R2Config{
+		AccountID: cfg.R2AccountID, AccessKey: cfg.R2AccessKeyID, SecretKey: cfg.R2SecretAccessKey,
+		Bucket: cfg.R2Bucket, Endpoint: cfg.R2Endpoint, Region: cfg.R2Region,
+	})
+	if err != nil {
+		return err
+	}
+	limits := media.Limits{
+		MaxBytes: cfg.AttachmentMaxBytes, MaxEdge: cfg.AttachmentMaxEdge,
+		MaxPixels: cfg.AttachmentMaxPixels, MaxVoiceMillis: cfg.AttachmentMaxVoiceMS,
+	}
+	if err := forums.UseAttachments(postgres.AttachmentSettings{
+		Store: objects, Limits: limits, UploadsPerMinute: cfg.AttachmentUploadsPerMinute,
+		QuotaBytes: cfg.AttachmentQuotaBytes, PresignTTL: cfg.AttachmentPresignTTL,
+		MaxPerMessage: cfg.AttachmentMaxPerMessage,
+	}); err != nil {
+		return err
+	}
 	users := postgres.NewUsers(pool)
 	api := httpapi.NewAPI(verifier.Authenticate, users.Ensure)
+	if err := api.SetMediaLimits(limits); err != nil {
+		return err
+	}
 	api.RegisterForums(forums)
 	api.RegisterChannels(forums)
 	api.RegisterConversations(forums)

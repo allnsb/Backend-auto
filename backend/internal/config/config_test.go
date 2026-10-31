@@ -18,6 +18,10 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 		"ODYSSEIA_AUTH_JWKS_URL":              "https://issuer.invalid/keys",
 		"ODYSSEIA_REALTIME_CONNECTION_SECRET": "connection-test-secret",
 		"ODYSSEIA_REALTIME_PROXY_SECRET":      "proxy-test-secret",
+		"ODYSSEIA_R2_ACCOUNT_ID":              "abc123",
+		"ODYSSEIA_R2_ACCESS_KEY_ID":           "test-access-key",
+		"ODYSSEIA_R2_SECRET_ACCESS_KEY":       "test-secret-key",
+		"ODYSSEIA_R2_BUCKET":                  "odysseia-attachments",
 	} {
 		t.Setenv(key, value)
 	}
@@ -46,6 +50,35 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 			if err != nil || cfg.MaxWriteTransactions != tc.want || cfg.ConversationMemberLimit != 50 {
 				t.Fatalf("budget=%d limit=%d, want budget=%d limit=50: %v", cfg.MaxWriteTransactions, cfg.ConversationMemberLimit, tc.want, err)
 			}
+			if cfg.AttachmentMaxBytes != 10<<20 || cfg.AttachmentMaxEdge != 8192 || cfg.AttachmentMaxPixels != 16_777_216 || cfg.AttachmentMaxVoiceMS != 300_000 || cfg.AttachmentUploadsPerMinute != 10 || cfg.AttachmentQuotaBytes != 100<<20 || cfg.AttachmentPresignTTL.String() != "1m0s" || cfg.AttachmentMaxPerMessage != 4 || cfg.R2Region != "auto" {
+				t.Fatalf("attachment defaults = %+v", cfg)
+			}
 		})
+	}
+}
+
+func TestAttachmentConfigurationRejectsSecretsAndBadLimits(t *testing.T) {
+	for key, value := range map[string]string{
+		"ODYSSEIA_HTTPS_ADDR":                 "127.0.0.1:8443",
+		"ODYSSEIA_TLS_CERT_FILE":              "fixture.crt",
+		"ODYSSEIA_TLS_KEY_FILE":               "fixture.key",
+		"ODYSSEIA_DATABASE_URL":               "postgresql://fixture.invalid/db",
+		"ODYSSEIA_AUTH_ISSUER":                "https://issuer.invalid",
+		"ODYSSEIA_AUTH_AUDIENCE":              "forum",
+		"ODYSSEIA_AUTH_JWKS_URL":              "https://issuer.invalid/keys",
+		"ODYSSEIA_REALTIME_CONNECTION_SECRET": "connection-test-secret",
+		"ODYSSEIA_REALTIME_PROXY_SECRET":      "proxy-test-secret",
+		"ODYSSEIA_R2_ACCOUNT_ID":              "abc123",
+		"ODYSSEIA_R2_ACCESS_KEY_ID":           "test-access-key",
+		"ODYSSEIA_R2_SECRET_ACCESS_KEY":       "test-secret-key",
+		"ODYSSEIA_R2_BUCKET":                  "odysseia-attachments",
+	} {
+		t.Setenv(key, value)
+	}
+	t.Setenv("ODYSSEIA_R2_SECRET_ACCESS_KEY", "super-secret-value")
+	t.Setenv("ODYSSEIA_ATTACHMENT_PRESIGN_TTL", "super-secret-value")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "ODYSSEIA_ATTACHMENT_PRESIGN_TTL") || strings.Contains(err.Error(), "super-secret-value") {
+		t.Fatalf("ttl error leaked or accepted the value: %v", err)
 	}
 }

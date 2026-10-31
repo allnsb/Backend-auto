@@ -13,6 +13,7 @@ import (
 	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/identity"
+	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/telemetry"
 )
 
@@ -31,6 +32,7 @@ type API struct {
 	verify       func(context.Context, string) (identity.Authentication, error)
 	resolve      func(context.Context, identity.ExternalID) (identity.User, error)
 	measurements telemetry.Measurements
+	mediaLimits  media.Limits
 }
 
 func NewAPI(
@@ -38,7 +40,7 @@ func NewAPI(
 	resolve func(context.Context, identity.ExternalID) (identity.User, error),
 ) *API {
 	mux := http.NewServeMux()
-	api := &API{mux: mux, verify: verify, resolve: resolve}
+	api := &API{mux: mux, verify: verify, resolve: resolve, mediaLimits: media.DefaultLimits()}
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(openAPI)
@@ -57,6 +59,16 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Measurements is an in-process aggregate, not a public diagnostic route.
 // Test control pipes can read it without exposing private queue activity.
 func (api *API) Measurements() telemetry.Snapshot { return api.measurements.Snapshot() }
+
+// SetMediaLimits replaces the attachment inspection budget. It does not change
+// the server's existing read deadline.
+func (api *API) SetMediaLimits(limits media.Limits) error {
+	if err := limits.Valid(); err != nil {
+		return err
+	}
+	api.mediaLimits = limits
+	return nil
+}
 
 type userHandler func(http.ResponseWriter, *http.Request, identity.Actor) error
 
@@ -134,8 +146,20 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 409, "idempotency_conflict")
 	case errors.Is(err, forum.ErrReference), errors.Is(err, conversation.ErrReference):
 		writeProblem(w, 422, "invalid_reference")
-	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid):
+	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid),
+		errors.Is(err, media.ErrDimensions), errors.Is(err, media.ErrDuration), errors.Is(err, media.ErrCorrupt):
 		writeProblem(w, 422, "invalid_input")
+	case errors.Is(err, conversation.ErrAttachment):
+		writeProblem(w, 422, "attachment_rejected")
+	case errors.Is(err, media.ErrType):
+		writeProblem(w, http.StatusUnsupportedMediaType, "unsupported_media_type")
+	case errors.Is(err, media.ErrTooLarge):
+		writeProblem(w, http.StatusRequestEntityTooLarge, "body_too_large")
+	case errors.Is(err, conversation.ErrQuota):
+		writeProblem(w, http.StatusRequestEntityTooLarge, "upload_quota_exceeded")
+	case errors.Is(err, conversation.ErrRate):
+		w.Header().Set("Retry-After", "60")
+		writeProblem(w, http.StatusTooManyRequests, "upload_rate_exceeded")
 	case errors.Is(err, forum.ErrBusy), errors.Is(err, conversation.ErrBusy):
 		w.Header().Set("Retry-After", "1")
 		writeProblem(w, http.StatusServiceUnavailable, "write_capacity_exceeded")

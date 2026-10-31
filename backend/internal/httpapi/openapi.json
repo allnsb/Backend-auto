@@ -2,8 +2,8 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.7.0",
-    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and text direct/group conversations. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Connection JWTs grant identity only. Author and platform overrides, works, attachments, read receipts and production capacity remain separate stages."
+    "version": "0.8.0",
+    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. Connection JWTs grant identity only. Author and platform overrides, works, custom emoji, read receipts and production capacity remain separate stages."
   },
   "servers": [
     {
@@ -1840,7 +1840,7 @@
       },
       "post": {
         "operationId": "createConversationMessage",
-        "description": "Appends one text message and publishes conversation.message.created to each active member's inbox. quote_id must name a message in this conversation. The author's private read cursor advances to the new position; peers do not receive a read receipt. One outbox row is written per active member. A 201 confirms persistence, not client receipt.",
+        "description": "Appends one conversation message and publishes conversation.message.created to each active member's inbox. body may be empty only when attachment_ids is non-empty. Each id must name a ready attachment uploaded by the caller in this conversation and not yet bound. quote_id must name a message in this conversation. The author's private read cursor advances to the new position; peers do not receive a read receipt. One outbox row is written per active member. The event carries attachment metadata, not a presigned URL. A 201 confirms persistence, not client receipt.",
         "security": [
           {
             "accessToken": []
@@ -1895,6 +1895,145 @@
           },
           "422": {
             "$ref": "#/components/responses/InvalidInput"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversation_id}/attachments": {
+      "post": {
+        "operationId": "uploadConversationAttachment",
+        "description": "Streams one image or voice file through the API into private object storage. The caller must be an active member. Content-Type and the filename are not trusted: the server sniffs the bytes, rejects SVG, HTML, and unknown types, strips JPEG/PNG/WebP metadata, and checks image dimensions or voice duration. Voice requires duration_ms. The stored object is ready but unbound until a message references it. This request shares the server's read deadline.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "duration_ms": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 300000,
+                    "description": "Client-reported voice duration. Required for audio and rejected for images. The stored duration is the container duration when it agrees."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ready attachment owned by the caller. Location names the download route.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          },
+          "429": {
+            "$ref": "#/components/responses/UploadRate"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/conversations/{conversation_id}/attachments/{attachment_id}": {
+      "get": {
+        "operationId": "openConversationAttachment",
+        "description": "Active members receive a 302 to a short-lived presigned GET. The URL is a bearer token for one object. A non-member, a removed member, or an unknown id is 404. Another member can open an attachment only after it is bound to a message; the uploader can open their own ready object before sending. This redirect sets nosniff. The object response carries the allowlisted Content-Type stored with the object; object storage cannot add X-Content-Type-Options.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConversationId"
+          },
+          {
+            "$ref": "#/components/parameters/AttachmentId"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Presigned GET. Do not log or persist the Location value.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
           },
           "503": {
             "$ref": "#/components/responses/Unavailable"
@@ -2239,6 +2378,15 @@
           "type": "string",
           "format": "uuid"
         }
+      },
+      "AttachmentId": {
+        "name": "attachment_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     },
     "schemas": {
@@ -2306,7 +2454,9 @@
               404,
               409,
               413,
+              415,
               422,
+              429,
               503,
               408
             ]
@@ -2321,6 +2471,9 @@
               "write_capacity_exceeded",
               "invalid_request",
               "body_too_large",
+              "upload_quota_exceeded",
+              "upload_rate_exceeded",
+              "unsupported_media_type",
               "resource_not_found",
               "permission_denied",
               "member_exists",
@@ -2328,6 +2481,7 @@
               "idempotency_conflict",
               "invalid_reference",
               "invalid_input",
+              "attachment_rejected",
               "request_timeout"
             ]
           }
@@ -2695,11 +2849,81 @@
             "format": "uuid"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 32768
           },
           "quote_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "conversation_id",
+          "kind",
+          "content_type",
+          "byte_size",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "voice"
+            ]
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "image/gif",
+              "audio/webm;codecs=opus",
+              "audio/mp4",
+              "audio/ogg"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000
           },
           "created_at": {
             "type": "string",
@@ -2968,18 +3192,23 @@
       "ConversationMessageDraft": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "body"
-        ],
         "properties": {
           "body": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 32768
+            "maxLength": 32768,
+            "description": "Required and non-blank when attachment_ids is empty. May be empty when at least one attachment is bound."
           },
           "quote_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "attachment_ids": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -3298,7 +3527,35 @@
         }
       },
       "TooLarge": {
-        "description": "Request JSON exceeds 256 KiB.",
+        "description": "Request JSON exceeds 256 KiB, or an attachment exceeds the configured byte limit (body_too_large) or the caller's stored quota (upload_quota_exceeded).",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "UnsupportedMedia": {
+        "description": "The upload bytes are SVG, HTML, or not an allowlisted image or voice container. Code unsupported_media_type.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "UploadRate": {
+        "description": "The caller exceeded the per-minute upload count. Code upload_rate_exceeded. Retry-After is 60.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "content": {
           "application/problem+json": {
             "schema": {
@@ -3308,7 +3565,7 @@
         }
       },
       "InvalidInput": {
-        "description": "Invalid content, unsupported mode, or invalid same-topic root/quote; third-level nesting is rejected.",
+        "description": "Invalid content, unsupported mode, invalid same-topic root/quote, image dimensions, voice duration, or an attachment that is not ready, owned, in this conversation, and unbound. Third-level nesting is rejected.",
         "content": {
           "application/problem+json": {
             "schema": {

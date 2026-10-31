@@ -1,6 +1,6 @@
 # Centrifugo 合成 WSS 接入
 
-复用官方 Centrifugo 6.10.2 的 PostgreSQL 消费器、WSS 和 Go SDK 0.13.0；版本、下载包 SHA-256 与许可见 [versions.lock.json](versions.lock.json)。当前开发契约为 OpenAPI info.version=0.7.0。论坛、帖子和固定频道由每次订阅的 HTTPS 代理授权；文字会话的个人收件箱是 user-limited channel，不经过该代理。频道 JWT 已不再使用。早期撤权结果见 [验证记录](../../../docs/成员撤权与消费者故障验证-2026-10-28.md)。
+复用官方 Centrifugo 6.10.2 的 PostgreSQL 消费器、WSS 和 Go SDK 0.13.0；版本、下载包 SHA-256 与许可见 [versions.lock.json](versions.lock.json)。当前开发契约为 OpenAPI info.version=0.8.0。论坛、帖子和固定频道由每次订阅的 HTTPS 代理授权；文字会话的个人收件箱是 user-limited channel，不经过该代理。频道 JWT 已不再使用。早期撤权结果见 [验证记录](../../../docs/成员撤权与消费者故障验证-2026-10-28.md)。
 
 P2 后端 A01–A08 已完成。当前完整验收与交接入口是 [P2 验收](../../../docs/P2后端验收与交接-2026-10-29.md)，本文件保留运行和协议约定；正式上线指标与同事前端页面签收单独跟进。
 

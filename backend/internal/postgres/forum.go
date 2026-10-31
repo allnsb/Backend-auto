@@ -13,8 +13,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"odysseia.local/backend/internal/blob"
 	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/forum"
+	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/message"
 	"odysseia.local/backend/internal/telemetry"
 )
@@ -24,6 +26,12 @@ type Forums struct {
 	writes                  *writeAdmission
 	pages                   *messagePageCache
 	conversationMemberLimit int
+	blobs                   blob.Store
+	mediaLimits             media.Limits
+	uploadsPerMinute        int
+	quotaBytes              int64
+	presignTTL              time.Duration
+	maxAttachments          int
 }
 
 func NewForums(pool *pgxpool.Pool) *Forums {
@@ -36,6 +44,11 @@ func NewForums(pool *pgxpool.Pool) *Forums {
 	return &Forums{
 		pool: pool, writes: newWriteAdmission(writers, forumWriteQueueLimit),
 		conversationMemberLimit: conversation.MaxMembers,
+		mediaLimits:             media.DefaultLimits(),
+		uploadsPerMinute:        10,
+		quotaBytes:              100 << 20,
+		presignTTL:              time.Minute,
+		maxAttachments:          conversation.MaxAttachmentsPerMessage,
 	}
 }
 

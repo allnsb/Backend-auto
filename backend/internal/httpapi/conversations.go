@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/identity"
+	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/message"
 )
 
@@ -27,6 +30,8 @@ type ConversationBackend interface {
 	DissolveConversation(ctx context.Context, actor, id string) error
 	MarkConversationRead(ctx context.Context, actor, id string, position int64) (conversation.ReadState, error)
 	ListUnread(ctx context.Context, actor string) (conversation.UnreadSummary, error)
+	UploadConversationAttachment(ctx context.Context, actor, conversationID string, prepared media.Prepared) (message.Attachment, error)
+	OpenConversationAttachment(ctx context.Context, actor, conversationID, attachmentID string) (string, error)
 }
 
 func (api *API) RegisterConversations(backend ConversationBackend) {
@@ -136,6 +141,39 @@ func (api *API) RegisterConversations(backend ConversationBackend) {
 		}
 		return writeJSON(w, http.StatusCreated, result)
 	}))
+	api.mux.HandleFunc("POST /v1/conversations/{conversation_id}/attachments", api.authenticated(func(w http.ResponseWriter, r *http.Request, actor identity.Actor) error {
+		id, err := canonicalID(r.PathValue("conversation_id"))
+		if err != nil {
+			return err
+		}
+		prepared, err := api.readAttachment(w, r)
+		if err != nil {
+			return err
+		}
+		result, err := backend.UploadConversationAttachment(r.Context(), actor.ID, id, prepared)
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Location", "/v1/conversations/"+id+"/attachments/"+result.ID)
+		return writeJSON(w, http.StatusCreated, result)
+	}))
+	api.mux.HandleFunc("GET /v1/conversations/{conversation_id}/attachments/{attachment_id}", api.authenticated(func(w http.ResponseWriter, r *http.Request, actor identity.Actor) error {
+		id, err := canonicalID(r.PathValue("conversation_id"))
+		if err != nil {
+			return err
+		}
+		attachmentID, err := canonicalID(r.PathValue("attachment_id"))
+		if err != nil {
+			return err
+		}
+		target, err := backend.OpenConversationAttachment(r.Context(), actor.ID, id, attachmentID)
+		if err != nil {
+			return err
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.Redirect(w, r, target, http.StatusFound)
+		return nil
+	}))
 	api.mux.HandleFunc("PUT /v1/conversations/{conversation_id}/members/{user_id}", api.authenticated(func(w http.ResponseWriter, r *http.Request, actor identity.Actor) error {
 		if r.ContentLength != 0 {
 			return errBadRequest
@@ -231,6 +269,39 @@ func (api *API) RegisterConversations(backend ConversationBackend) {
 		}
 		return writeJSON(w, http.StatusOK, subscription{Channel: conversation.InboxChannel(actor.ID)})
 	}))
+}
+
+func (api *API) readAttachment(w http.ResponseWriter, r *http.Request) (media.Prepared, error) {
+	limit := api.mediaLimits.MaxBytes
+	r.Body = http.MaxBytesReader(w, r.Body, limit+64*1024)
+	if err := r.ParseMultipartForm(limit + 64*1024); err != nil {
+		var maxBytes *http.MaxBytesError
+		if errors.As(err, &maxBytes) {
+			return media.Prepared{}, errBodyTooLarge
+		}
+		return media.Prepared{}, errBadRequest
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		return media.Prepared{}, errBadRequest
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return media.Prepared{}, errBadRequest
+	}
+	if int64(len(data)) > limit {
+		return media.Prepared{}, errBodyTooLarge
+	}
+	declared := 0
+	if raw := r.FormValue("duration_ms"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			return media.Prepared{}, errBadRequest
+		}
+		declared = parsed
+	}
+	return media.Inspect(data, declared, api.mediaLimits)
 }
 
 func conversationUser(r *http.Request) (string, string, error) {
