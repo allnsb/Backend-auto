@@ -118,6 +118,6 @@ func TestOpenAPIAndProtectedRouteMethods(t *testing.T) {
 	w = httptest.NewRecorder()
 	api.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/me", nil))
 	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatal("identity reads must not expose an implicit provisioning command")
+		t.Fatal("POST /v1/me is not a registration route; bootstrap runs inside the authenticated directory")
 	}
 }

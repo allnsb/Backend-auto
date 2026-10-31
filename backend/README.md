@@ -22,7 +22,7 @@
 
 ## 当前能力
 
-- HTTP 0.5.1 支持 threaded／chat 两种帖子默认布局和论坛下的固定即时频道；频道继承当前论坛成员，支持创建、收发、同流引用、分页、WSS／恢复和成员撤权。正文、缓存与总写预算复用，不要求作品存在。完整角色、个人视图、作品关联及私聊群聊另行实现，见 [P3 契约与证据](../docs/P3讨论模式与固定频道-2026-10-30.md)。
+- HTTP 0.6.0 在 0.5.1 的 threaded／chat 帖子和固定即时频道之上，增加身份组与论坛成员接口。频道仍继承当前论坛成员。帖子与频道的写入授权仍是成员关系。有效访问令牌会建立本地用户。见 [协作面记录](../docs/协作面与模拟身份-2026-10-31.md) 和 [P3 契约与证据](../docs/P3讨论模式与固定频道-2026-10-30.md)。
 - 固定内存的分段耗时／拒绝原因计量，供进程内聚合与测试控制管道读取；没有新增公网诊断端点，也不记录正文、令牌、SQL 参数或动态资源标签。
 
 - 从进程环境读取明确配置，不隐式加载 .env。
@@ -31,24 +31,25 @@
 - 启动时通过校验证书与主机名的 TLS 1.3 连接 PostgreSQL；不接受 disable／allow／prefer／require／verify-ca 等降低验证的连接配置。
 - GET／HEAD /readyz 在 2 秒内检查数据库连接；成功 204、失败 503，响应不携带数据库错误。当前只检查连接，不冒充业务表或尚未接入服务的就绪检查。
 - 独立 migrate up 命令执行嵌入式 SQL 迁移；并发由 PostgreSQL 会话锁协调。API 启动与普通查询不执行迁移。
-- GET／HEAD /v1/me 根据校验后的 issuer＋subject 查询本地用户，只返回本地 UUID 和创建时间。未创建本地账号时返回 404，GET 不注册用户。
-- 独立 provision-user 维护命令显式创建身份映射；重复／并发创建保持同一 UUID。API 账号在 users 表上只需 SELECT，不拥有创建账号的权限；论坛使用其单独列出的读写授权。
+- GET／HEAD /v1/me 根据校验后的 issuer＋subject 返回本地用户，只含本地 UUID 和创建时间。该身份第一次出现时插入一行；重复请求复用同一 UUID 和创建时间。
+- 独立 provision-user 维护命令仍可显式创建身份映射；重复／并发创建保持同一 UUID。API 账号在 users 上需要 SELECT 和 INSERT。UPDATE 与 DELETE 留给维护账号。论坛读写授权见协作面记录。
 - GET /openapi.json 提供嵌入的 OpenAPI 3.2.1 契约；身份接口错误使用 application/problem+json。
 - 成员论坛 API 支持帖子创建／读取、一层子回复、同帖引用、带作用域的分页、并发幂等，以及正文与待发布事件同事务写入。完整路径和准备命令见 [普通论坛切片](../docs/普通论坛切片与扩展边界.md)。
 - 开帖／建频道／回复入队前检查权限，每计数器最多 1 个活动写者、12 个活动／等待命令，再申请全局写名额；0.5.1 自动预算留下约三分之一共享池余量，池 16 对应 10 个写事务，总活动／等待 256，两段等待共用 2 秒。ODYSSEIA_MAX_WRITE_TRANSACTIONS=0 或未设置使用自动值，正整数可覆盖但不能超过该 API 池上限。它不是物理读取池或全站配额，所有实例／消费者／运维连接要合计。事务内重新授权，503／Retry-After: 1 保留；分池、借用与动态份额未采用，见 [最新对照](../docs/整体优化与写预算对照-2026-10-30.md)。
 - 每次消息分页先查当前成员与流位置，再复用追加型正文快照；Ristretto 的估计成本上限 64MiB、TTL 5 分钟，singleflight 合并同键未完成的内容加载。编辑／删除前必须增加版本或失效机制；维护命令沿用无缓存构造器，API 显式创建并在停机后关闭缓存。
-- 八项迁移中的第六项生成 Outbox 分区：控制 0、发布 1–4，同一 scope 保持同一数据分区；第七项移除导致跨流提交串行的逐条通知，原生消费者使用已有 20ms 轮询。已有实例应用第六项时须按 [操作步骤](deploy/realtime/README.md)停写、排空并统一消费者；从六项升级第七项不改路由或积压，先确认轮询；没有给消息表做物理分区。
+- 第六项迁移生成 Outbox 分区：控制 0、发布 1–4，同一 scope 保持同一数据分区；第七项移除导致跨流提交串行的逐条通知，原生消费者使用已有 20ms 轮询。已有实例应用第六项时须按 [操作步骤](deploy/realtime/README.md)停写、排空并统一消费者；从六项升级第七项不改路由或积压，先确认轮询；没有给消息表做物理分区。第九项只增加身份组，不改分区。
 - HTTPS 签发短期连接凭据，订阅代理检查当前读取权限，维护移除与审计／断连同事务。真实 WSS、恢复、主动撤权、消费失败重试及原生服务重启通过；跨重启会重放相同事件 ID，合并要求见 [事件接入契约](../docs/实时服务重启与事件接入契约-2026-10-29.md)。
 - 请求头读取 5 秒、完整读取 10 秒，请求头预算 32 KiB；真实慢请求超时返回 408，大请求头由服务器返回 431。
 - Ctrl+C／SIGTERM 触发停机，最多等待 5 秒让正在处理的请求完成，超时关闭连接并明确报错。
 
-当前有最小身份、成员论坛、固定频道和实时接入 API；第八项增加模式与频道，前七项迁移包括成员审计、实时命令约束／只读积压视图、Outbox 逻辑分区及热路径通知移除；OpenAPI info.version 为 0.5.1。realtime-status 维护命令使用仅能读取聚合视图的观察账号，返回积压量／年龄及警戒退出码，不读取载荷。双节点故障、真实 65 秒中断、缓存过期和分页补读／实时合并通过。仍只处理合成数据；主动断连经 outbox 异步执行，不能据身份 JWT 的短有效期推断持续刷新连接的统一故障撤权上限。尚无作品、完整聊天或文件 API；真实 IdP、完整身份组、正式高可用／SLA、容量和生产隐私基础设施仍待落实。
+当前有身份引导、身份组、论坛成员、固定频道和实时接入 API。第九项迁移增加身份组、用户与组的关系，以及论坛成员的 role_id，默认角色为 member。前八项的模式、频道、审计、实时命令、只读积压、Outbox 分区和通知移除保持原样。OpenAPI info.version 为 0.6.0。realtime-status 维护命令使用仅能读取聚合视图的观察账号，返回积压量／年龄及警戒退出码，不读取载荷。双节点故障、真实 65 秒中断、缓存过期和分页补读／实时合并通过。仍只处理合成数据；主动断连经 outbox 异步执行，不能据身份 JWT 的短有效期推断持续刷新连接的统一故障撤权上限。尚无作品、完整聊天或文件 API；真实 ZITADEL、作者／平台覆盖、正式高可用／SLA、容量和生产隐私基础设施仍待落实。
 
 ## 目录
 
 ```text
 backend/
 ├─ cmd/api/           API 进程入口与装配
+├─ cmd/mock-idp/      开发用 OIDC 发现与 JWKS
 ├─ cmd/migrate/       独立迁移命令
 ├─ cmd/provision-user/ 独立测试账号创建命令
 ├─ cmd/provision-forum/ 独立成员论坛准备命令
@@ -56,7 +57,8 @@ backend/
 ├─ cmd/realtime-status/ 仅查询聚合视图的积压检查命令
 ├─ internal/config/   API 配置读取与格式检查
 ├─ internal/httpapi/  HTTPS、身份接口、OpenAPI 与生命周期
-├─ internal/identity/ 供应商无关的外部身份／本地用户类型
+├─ internal/identity/ 供应商无关的外部身份、本地用户和身份组判定
+├─ internal/mockidp/  模拟 issuer 的发现文档、JWKS 和访问令牌
 ├─ internal/message/  通用消息类型，不依赖作品或论坛
 ├─ internal/forum/    论坛、帖子、楼层与引用规则
 ├─ internal/tokenauth/ JWT Access Token 与可信 JWKS 适配
@@ -86,6 +88,7 @@ backend/
 | ODYSSEIA_AUTH_AUDIENCE | API 必填；为本 API 配置的 audience。 |
 | ODYSSEIA_AUTH_JWKS_URL | API 必填；明确配置的可信 HTTPS 公钥端点。 |
 | ODYSSEIA_AUTH_CA_FILE | 可选；只替换 JWKS 客户端信任根，空时使用系统信任根。 |
+| ODYSSEIA_MOCK_IDP_ADDR／ISSUER／AUDIENCE／TLS_CERT_FILE／TLS_KEY_FILE | 仅 mock-idp 进程。监听地址必须是回环，默认 127.0.0.1:9443。issuer 默认 https://127.0.0.1:9443，JWKS 为该源加上 `/oauth/v2/keys`。 |
 | ODYSSEIA_REALTIME_CONNECTION_SECRET | API 必填；至少 32 字节随机秘密，对应 Centrifugo 连接验签配置。 |
 | ODYSSEIA_REALTIME_PROXY_SECRET | API 必填；另一把至少 32 字节随机秘密，仅供 Centrifugo 私有 HTTPS 代理认证，与签名密钥不同。 |
 | ODYSSEIA_PROVISION_SUBJECT | 仅账号维护命令必填；来自身份供应商的 subject，不用 email 替代。 |
@@ -108,7 +111,15 @@ go run ./cmd/migrate up
 go run ./cmd/api
 ```
 
-API 启动还要求可信 JWKS 首次加载成功，不会在身份配置缺失或公钥不可验证时开放匿名身份路径。运行账号的 SELECT 授权、测试身份准备、维护命令与令牌格式见 [身份接入与 API 契约](../docs/身份接入与API契约.md)。
+API 启动还要求可信 JWKS 首次加载成功，不会在身份配置缺失或公钥不可验证时开放匿名身份路径。运行账号需要 users 的 SELECT 与 INSERT。令牌格式见 [身份接入与 API 契约](../docs/身份接入与API契约.md)。
+
+开发用模拟 issuer 与 API 分开启动，并且只监听回环地址。`0.0.0.0`、空主机和其他非回环地址会拒绝启动。`POST /mock/token` 再检查客户端地址，非回环返回 403。证书名称必须等于 issuer 主机名。发现文档位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/.well-known/openid-configuration`，公钥位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/oauth/v2/keys`。把这两个值分别写入 `ODYSSEIA_AUTH_ISSUER` 和 `ODYSSEIA_AUTH_JWKS_URL`，并把 `ODYSSEIA_AUTH_AUDIENCE` 设成 `ODYSSEIA_MOCK_IDP_AUDIENCE`。
+
+```powershell
+go run ./cmd/mock-idp
+```
+
+`POST /mock/token` 接受 `{"subject":"...","alg":"RS256"}` 或 `ES256`，audience 固定为 `ODYSSEIA_MOCK_IDP_AUDIENCE`，请求体不能另写。返回五分钟的 `at+jwt`。`POST /oauth/v2/token` 在模拟进程中返回 501，把该路径留给以后的 ZITADEL。
 
 以证书包含 localhost、客户端持有对应 CA 证书为例，可检查：
 
@@ -121,7 +132,7 @@ curl --cacert <CA证书路径> https://localhost:8443/healthz
 ## 验证
 
 ```powershell
-go test -count=1 -timeout=30s ./...
+go test -count=1 -timeout=180s ./...
 go vet ./...
 go build ./...
 ```

@@ -1,14 +1,14 @@
 # 最小身份接入与 API 契约
 
-更新时间：2026-10-29。本文记录身份侧合成验证，正式身份供应商尚未选定／接入。代码入口见 [backend](../backend/README.md)，机器可读契约见 [openapi.json](../backend/internal/httpapi/openapi.json)，运行中的同一文档由 HTTPS GET /openapi.json 提供。
+更新时间：2026-10-31。本文记录身份侧规则。正式供应商定为自托管 ZITADEL，当前进程是同路径的模拟 issuer，见 [协作面记录](协作面与模拟身份-2026-10-31.md)。代码入口见 [backend](../backend/README.md)，机器可读契约见 [openapi.json](../backend/internal/httpapi/openapi.json)，运行中的同一文档由 HTTPS GET /openapi.json 提供。
 
-P2 后端切片已完成，[普通论坛接口](普通论坛切片与扩展边界.md)复用本文的身份入口；本文只维护身份侧规则，正式登录供应商仍未接入。当前全部迁移为五项，含实时命令约束与只读聚合；论坛、审计及授权见相应文档，当前阶段见 [P2 验收](P2后端验收与交接-2026-10-29.md)。
+P2 后端切片已完成，[普通论坛接口](普通论坛切片与扩展边界.md)复用本文的身份入口。当前全部迁移为九项。论坛成员与身份组接口以协作面记录为准。
 
 ## 当前身份边界
 
 前端从可信授权服务器取得 Access Token，再使用 Authorization: Bearer 调用 API。当前后端承担资源服务器的令牌验证与本地身份映射；没有实现登录回调、密码注册、刷新令牌、账号关联或即时注销，不把测试维护命令定义为正式注册准入政策。
 
-业务层使用本地随机 UUID。外部身份按 issuer＋subject 精确匹配，二者组成数据库唯一键；当前一个外部身份对应一个本地用户。相同 subject 来自不同 issuer 时不会合并，也不按 email 自动关联。未来多身份绑定需单独设计，不能直接扩大当前维护命令的权限。
+业务层使用本地随机 UUID。外部身份按 issuer＋subject 精确匹配，二者组成数据库唯一键；当前一个外部身份对应一个本地用户。相同 subject 来自不同 issuer 时不会合并，也不按 email 自动关联。首次通过校验的访问令牌会插入这一行；之后的请求复用同一 UUID 和创建时间。未来多身份绑定需单独设计。
 
 HTTP 传输只接受 Authorization 头中的一个 Bearer 凭据。请求正文、查询参数、Cookie 和 X-User-ID 等身份头不能指定当前作者或账号；没有有效令牌时不访问账号存储。返回用户信息仅含 id、created_at，不暴露 subject、email 或原始令牌。
 
@@ -31,11 +31,11 @@ JWKS 使用 TLS 1.3，验证 CA／主机名、拒绝重定向，5 秒超时。�
 
 ## 显式准备测试账号
 
-先准备独立数据库和迁移／运行身份，通过迁移命令应用 SQL。当前迁移创建 schema 和 users 表，不硬编码部署环境的数据库角色名。运行身份只需该 schema 的 USAGE 和 users 的 SELECT；以夹具角色名为例，由维护身份在迁移后执行：
+先准备独立数据库和迁移／运行身份，通过迁移命令应用 SQL。当前迁移创建 schema 和 users 表，不硬编码部署环境的数据库角色名。运行身份需要该 schema 的 USAGE，以及 users 的 SELECT 和 INSERT，以便首次有效令牌写入本地用户。UPDATE 和 DELETE 仍留给维护身份。以夹具角色名为例，由维护身份在迁移后执行：
 
 ```sql
 GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
-GRANT SELECT ON odysseia.users TO odysseia_runtime;
+GRANT SELECT, INSERT ON odysseia.users TO odysseia_runtime;
 ```
 
 本地或隔离测试中，在维护进程环境中设置 ODYSSEIA_MIGRATION_DATABASE_URL、ODYSSEIA_AUTH_ISSUER 和 ODYSSEIA_PROVISION_SUBJECT，随后运行：
@@ -55,7 +55,7 @@ go run ./cmd/provision-user
 | GET /healthz | 204，进程存活。 |
 | GET /readyz | 检查数据库连接，204 或 503；不证明业务表或身份供应商全部就绪。 |
 | GET /openapi.json | 无需身份凭据，提供嵌入的 OpenAPI 3.2.1 文档。 |
-| GET /v1/me | 200 返回当前本地用户；401 表示缺少／无效令牌，404 表示该可信身份尚未创建本地账号，503 表示账号查询不可用。GET 不写库。 |
+| GET /v1/me | 200 返回当前本地用户。有效令牌对应的本地行不存在时，同一请求插入该行并返回 200。401 表示缺少／无效令牌，503 表示账号存储不可用。目录实现若仍返回未建档，响应保持 404／account_not_provisioned。 |
 
 Go 的 GET 路由同时支持 HEAD；写入方法不能调用当前身份读取路径。/v1/me 的成功与错误均返回 Cache-Control: no-store。身份错误使用 application/problem+json，稳定扩展字段 code 为 authentication_required、invalid_token、account_not_provisioned 或 dependency_unavailable；错误不返回数据库／验签内部信息。401 带 WWW-Authenticate Bearer challenge。
 

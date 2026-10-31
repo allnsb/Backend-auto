@@ -35,12 +35,11 @@ func testUsers(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	}
 	defer ownerPool.Close()
 	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
-		GRANT SELECT ON odysseia.users TO odysseia_runtime;`)
+		GRANT SELECT, INSERT ON odysseia.users TO odysseia_runtime;`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reader := NewUsers(runtimePool)
-	writer := NewUsers(ownerPool)
 	external := identity.ExternalID{Issuer: "https://issuer.example", Subject: "same-subject"}
 	if _, err := reader.Find(ctx, external); !errors.Is(err, identity.ErrNotFound) {
 		t.Fatalf("unprovisioned lookup: %v", err)
@@ -59,7 +58,7 @@ func testUsers(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	results := make(chan result, 12)
 	for range 12 {
 		go func() {
-			user, err := writer.Provision(ctx, external)
+			user, err := reader.Ensure(ctx, external)
 			results <- result{user: user, err: err}
 		}()
 	}
@@ -83,24 +82,24 @@ func testUsers(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 		t.Fatalf("concurrent provisioning created %d users, want 1", count)
 	}
 	other := identity.ExternalID{Issuer: "https://another-issuer.example", Subject: external.Subject}
-	otherUser, err := writer.Provision(ctx, other)
+	otherUser, err := reader.Ensure(ctx, other)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if otherUser.ID == expected.ID {
 		t.Fatal("same subject from different issuers merged into one account")
 	}
-	_, err = reader.Provision(ctx, identity.ExternalID{Issuer: external.Issuer, Subject: "forbidden-runtime-write"})
+	_, err = runtimePool.Exec(ctx, `DELETE FROM odysseia.users WHERE subject = $1`, external.Subject)
 	var pgError *pgconn.PgError
 	if !errors.As(err, &pgError) || pgError.Code != "42501" {
-		t.Fatalf("runtime must not provision users: %v", err)
+		t.Fatalf("runtime must not delete users: %v", err)
 	}
 	t.Run("HTTPS access token to real database", func(t *testing.T) {
-		testIdentityAPI(t, ctx, writer, reader, runtimePool)
+		testIdentityAPI(t, ctx, reader, runtimePool)
 	})
 }
 
-func testIdentityAPI(t *testing.T, ctx context.Context, writer, reader *Users, runtimePool *pgxpool.Pool) {
+func testIdentityAPI(t *testing.T, ctx context.Context, reader *Users, runtimePool *pgxpool.Pool) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -132,7 +131,7 @@ func testIdentityAPI(t *testing.T, ctx context.Context, writer, reader *Users, r
 		t.Fatal(err)
 	}
 	api := httptest.NewUnstartedServer(nil)
-	api.Config = httpapi.NewServer("127.0.0.1:0", runtimePool.Ping, httpapi.NewAPI(verifier.Authenticate, reader.Find))
+	api.Config = httpapi.NewServer("127.0.0.1:0", runtimePool.Ping, httpapi.NewAPI(verifier.Authenticate, reader.Ensure))
 	api.TLS = api.Config.TLSConfig.Clone()
 	api.StartTLS()
 	defer api.Close()
@@ -163,27 +162,25 @@ func testIdentityAPI(t *testing.T, ctx context.Context, writer, reader *Users, r
 		return response
 	}
 	response := getMe()
-	response.Body.Close()
-	if response.StatusCode != 404 {
-		t.Fatalf("unprovisioned API response=%d, want 404", response.StatusCode)
-	}
-	if _, err := reader.Find(ctx, external); !errors.Is(err, identity.ErrNotFound) {
-		t.Fatal("GET /v1/me unexpectedly created an account")
-	}
-	expected, err := writer.Provision(ctx, external)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response = getMe()
 	defer response.Body.Close()
 	if response.StatusCode != 200 || response.TLS.Version != tls.VersionTLS13 {
-		t.Fatalf("provisioned API status=%d; expected TLS 1.3 success", response.StatusCode)
+		t.Fatalf("first API status=%d; expected TLS 1.3 success", response.StatusCode)
 	}
 	var actual identity.User
 	if err := json.NewDecoder(response.Body).Decode(&actual); err != nil {
 		t.Fatal(err)
 	}
-	if actual.ID != expected.ID {
-		t.Fatal("API did not resolve the user from verified issuer and subject")
+	expected, err := reader.Find(ctx, external)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.ID != expected.ID || actual.ID == "" {
+		t.Fatal("API did not bootstrap the user from verified issuer and subject")
+	}
+	again := getMe()
+	defer again.Body.Close()
+	var repeated identity.User
+	if again.StatusCode != 200 || json.NewDecoder(again.Body).Decode(&repeated) != nil || repeated.ID != expected.ID {
+		t.Fatal("repeated authenticated request changed the local user")
 	}
 }

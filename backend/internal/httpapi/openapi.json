@@ -2,8 +2,8 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.5.1",
-    "description": "Member-only independent forums, threaded/chat topic layouts and persistent fixed chat channels. Channel access inherits current forum membership. HTTPS commands persist canonical messages and transactional events; WSS initial subscriptions and recovery check current access. Connection JWTs grant identity only. Complete role policies, works, private/group conversations and production capacity remain separate stages."
+    "version": "0.6.0",
+    "description": "Member-only independent forums, threaded/chat topic layouts and persistent fixed chat channels. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership. Channel access inherits that membership. HTTPS commands persist canonical messages and transactional events; WSS initial subscriptions and recovery check current access. Connection JWTs grant identity only. Author and platform overrides, works, private/group conversations and production capacity remain separate stages."
   },
   "servers": [
     {
@@ -97,7 +97,7 @@
     "/v1/me": {
       "get": {
         "operationId": "getCurrentUser",
-        "description": "Resolves a pre-provisioned local user using the verified issuer and subject. Tokens in cookies, query parameters and identity headers are ignored. Responses have Cache-Control: no-store. Requires an RFC 9068 JWT access token, typ at+jwt (or application/at+jwt), nonempty kid, iss/aud/sub/exp/iat/jti/client_id, and RS256, ES256 or EdDSA. ID tokens and opaque access tokens are unsupported.",
+        "description": "Returns the local user for the verified issuer and subject, creating that user on the first valid access token. Tokens in cookies, query parameters and identity headers are ignored. Responses have Cache-Control: no-store. Requires an RFC 9068 JWT access token, typ at+jwt (or application/at+jwt), nonempty kid, iss/aud/sub/exp/iat/jti/client_id, and RS256, ES256 or EdDSA. none and HMAC algorithms are rejected. ID tokens and opaque access tokens are unsupported.",
         "security": [
           {
             "accessToken": []
@@ -119,6 +119,399 @@
           },
           "404": {
             "$ref": "#/components/responses/NotProvisioned"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/identity/groups": {
+      "get": {
+        "operationId": "listIdentityGroups",
+        "description": "Lists the identity-group catalog, including built-in member, moderator and owner roles. Any authenticated user may read it.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog ordered by ascending priority. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityGroupPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/identity/groups/{group_id}/members/{user_id}": {
+      "put": {
+        "operationId": "assignIdentityGroup",
+        "description": "Assigns a catalog group to a local user. Repeated assignment is the same result. The caller needs manage_groups on their highest-priority catalog group. The first owner is inserted by the migration role.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GroupID"
+          },
+          {
+            "$ref": "#/components/parameters/UserID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assignment stored. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupAssignment"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeIdentityGroup",
+        "description": "Removes a catalog assignment. Removing an assignment that is already absent returns removed=false. Requires manage_groups.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GroupID"
+          },
+          {
+            "$ref": "#/components/parameters/UserID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removal result. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/members": {
+      "get": {
+        "operationId": "listForumMembers",
+        "description": "Lists current forum members and the role stored on each membership. priority and role_name are that stored role, not the caller's effective priority from catalog groups. Non-members receive the same 404 as a missing forum. after is an exclusive user id.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ForumID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member page. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForumMemberPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addForumMember",
+        "description": "Adds a local user to the forum. role_id defaults to the built-in member group. Requires manage_members on the caller's winning role. The granted role priority must be strictly below the caller's effective priority in this forum. An existing membership returns 409 member_exists.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ForumID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Membership created. Cache-Control: no-store.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForumMember"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "description": "The user is already a member of this forum.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "removeForumMember",
+        "description": "Removes a forum member, records the removal and enqueues a realtime disconnect in the same transaction. Requires manage_members. The target's effective priority (highest of catalog groups and the stored forum role) must be strictly below the caller's effective priority. The change is rejected when it would leave the forum with no member whose winning role grants manage_members. The maintenance command remains available for audited operator retries.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ForumID"
+          },
+          {
+            "$ref": "#/components/parameters/UserID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member removed. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/members/{user_id}/role": {
+      "put": {
+        "operationId": "setForumMemberRole",
+        "description": "Sets the single role stored on this forum membership. Requires manage_members. The new role, and the member's effective priority, must both be strictly below the caller's effective priority. Effective priority is the highest of catalog groups and the stored forum role, the same value GET permissions returns. Demotion is rejected when the forum would have no remaining manager.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ForumID"
+          },
+          {
+            "$ref": "#/components/parameters/UserID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberRole"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated membership. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForumMember"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/permissions": {
+      "get": {
+        "operationId": "getForumPermissions",
+        "description": "Returns the caller's winning role in this forum. Applicable roles are the membership role plus catalog assignments. Only the highest-priority role's grants are returned. read, post and delete are UI gates; topic and channel writes remain membership checks. manage_members and manage_groups are enforced on the collaboration routes.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ForumID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective grants. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectivePermissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
           },
           "503": {
             "$ref": "#/components/responses/Unavailable"
@@ -1122,6 +1515,35 @@
         "description": "Private service credential from Centrifugo to this HTTPS proxy. Separate from connection signing. Never forward this header from clients."
       }
     },
+    "parameters": {
+      "ForumID": {
+        "name": "forum_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "UserID": {
+        "name": "user_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "GroupID": {
+        "name": "group_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
     "schemas": {
       "RealtimeConnectionToken": {
         "type": "object",
@@ -1183,6 +1605,7 @@
             "enum": [
               400,
               401,
+              403,
               404,
               409,
               413,
@@ -1202,6 +1625,9 @@
               "invalid_request",
               "body_too_large",
               "resource_not_found",
+              "permission_denied",
+              "member_exists",
+              "last_manager",
               "idempotency_conflict",
               "invalid_reference",
               "invalid_input",
@@ -1619,6 +2045,194 @@
             "type": "string"
           }
         }
+      },
+      "IdentityGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "priority",
+          "grants"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "post",
+                "delete",
+                "manage_members",
+                "manage_groups"
+              ]
+            }
+          }
+        }
+      },
+      "IdentityGroupPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityGroup"
+            }
+          }
+        }
+      },
+      "ForumMember": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id",
+          "role_id",
+          "role_name",
+          "priority"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role_name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          }
+        }
+      },
+      "ForumMemberPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForumMember"
+            }
+          },
+          "next": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MemberChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MemberRole": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role_id"
+        ],
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "GroupAssignment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id",
+          "group_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "RemovalResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "removed"
+        ],
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EffectivePermissions": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "forum_id",
+          "group_id",
+          "group_name",
+          "priority",
+          "grants"
+        ],
+        "properties": {
+          "forum_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "group_name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -1640,7 +2254,7 @@
         }
       },
       "NotProvisioned": {
-        "description": "Verified identity has no pre-provisioned local account. This read does not create one.",
+        "description": "The configured directory reported no local user. The API process directory creates the user for a valid access token, so a trusted subject does not receive this response.",
         "content": {
           "application/problem+json": {
             "schema": {
@@ -1670,6 +2284,26 @@
       },
       "BadRequest": {
         "description": "Malformed JSON, unknown fields, invalid UUID/header, invalid or cross-scope cursor.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "PermissionDenied": {
+        "description": "The caller lacks the required grant, or the role being granted or the target's effective priority is not strictly below the caller's effective priority.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "LastManager": {
+        "description": "The forum would have no member whose winning role grants manage_members.",
         "content": {
           "application/problem+json": {
             "schema": {

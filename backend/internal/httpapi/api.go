@@ -28,16 +28,16 @@ type Problem struct {
 type API struct {
 	mux          *http.ServeMux
 	verify       func(context.Context, string) (identity.Authentication, error)
-	find         func(context.Context, identity.ExternalID) (identity.User, error)
+	resolve      func(context.Context, identity.ExternalID) (identity.User, error)
 	measurements telemetry.Measurements
 }
 
 func NewAPI(
 	verify func(context.Context, string) (identity.Authentication, error),
-	find func(context.Context, identity.ExternalID) (identity.User, error),
+	resolve func(context.Context, identity.ExternalID) (identity.User, error),
 ) *API {
 	mux := http.NewServeMux()
-	api := &API{mux: mux, verify: verify, find: find}
+	api := &API{mux: mux, verify: verify, resolve: resolve}
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(openAPI)
@@ -85,7 +85,7 @@ func (api *API) authenticated(next userHandler) http.HandlerFunc {
 		}
 		w.Header().Del("WWW-Authenticate")
 		finish = telemetry.Start(ctx, telemetry.IdentityLookup)
-		user, err := api.find(ctx, auth.ExternalID)
+		user, err := api.resolve(ctx, auth.ExternalID)
 		finish()
 		if errors.Is(err, identity.ErrNotFound) {
 			writeProblem(w, http.StatusNotFound, "account_not_provisioned")
@@ -123,6 +123,12 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 408, "request_timeout")
 	case errors.Is(err, forum.ErrNotFound):
 		writeProblem(w, 404, "resource_not_found")
+	case errors.Is(err, forum.ErrForbidden):
+		writeProblem(w, 403, "permission_denied")
+	case errors.Is(err, forum.ErrExists):
+		writeProblem(w, 409, "member_exists")
+	case errors.Is(err, forum.ErrLastManager):
+		writeProblem(w, 409, "last_manager")
 	case errors.Is(err, forum.ErrConflict):
 		writeProblem(w, 409, "idempotency_conflict")
 	case errors.Is(err, forum.ErrReference):

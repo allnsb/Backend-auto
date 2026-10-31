@@ -10,11 +10,14 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("forum resource is unavailable to this user")
-	ErrInvalid   = errors.New("invalid forum input")
-	ErrReference = errors.New("invalid same-topic reference or root")
-	ErrConflict  = errors.New("idempotency key was already used with different input")
-	ErrBusy      = errors.New("forum write capacity is temporarily exhausted")
+	ErrNotFound    = errors.New("forum resource is unavailable to this user")
+	ErrInvalid     = errors.New("invalid forum input")
+	ErrReference   = errors.New("invalid same-topic reference or root")
+	ErrConflict    = errors.New("idempotency key was already used with different input")
+	ErrExists      = errors.New("forum member already exists")
+	ErrForbidden   = errors.New("caller lacks the required grant")
+	ErrLastManager = errors.New("forum would have no member manager")
+	ErrBusy        = errors.New("forum write capacity is temporarily exhausted")
 )
 
 const (
