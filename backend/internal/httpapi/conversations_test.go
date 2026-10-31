@@ -12,6 +12,7 @@ import (
 
 	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/identity"
+	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/message"
 )
 
@@ -23,7 +24,7 @@ func TestConversationRoutesHideNonMembersAndKeepTheReadCursor(t *testing.T) {
 	if err := doc.Validate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Info.Version != "0.7.0" {
+	if doc.Info.Version != "0.8.0" {
 		t.Fatalf("version %s", doc.Info.Version)
 	}
 	actor := identity.User{ID: "dc9de165-b912-4dcb-8620-8dfdb30176b7", CreatedAt: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}
@@ -85,11 +86,12 @@ func TestConversationRoutesHideNonMembersAndKeepTheReadCursor(t *testing.T) {
 }
 
 type conversationFake struct {
-	id           string
-	hidden       bool
-	manager      bool
-	gets         int
-	readPosition int64
+	id               string
+	hidden           bool
+	manager          bool
+	rejectAttachment bool
+	gets             int
+	readPosition     int64
 }
 
 func (f *conversationFake) OpenDM(context.Context, string, string, conversation.DMDraft) (conversation.Conversation, bool, error) {
@@ -126,6 +128,9 @@ func (f *conversationFake) SendConversationMessage(context.Context, string, stri
 	if f.hidden {
 		return message.Message{}, conversation.ErrNotFound
 	}
+	if f.rejectAttachment {
+		return message.Message{}, conversation.ErrAttachment
+	}
 	return message.Message{}, nil
 }
 
@@ -161,6 +166,23 @@ func (f *conversationFake) MarkConversationRead(_ context.Context, _, _ string, 
 
 func (f *conversationFake) ListUnread(context.Context, string) (conversation.UnreadSummary, error) {
 	return conversation.UnreadSummary{Items: []conversation.Unread{}, Total: 0}, nil
+}
+
+func (f *conversationFake) UploadConversationAttachment(context.Context, string, string, media.Prepared) (message.Attachment, error) {
+	if f.hidden {
+		return message.Attachment{}, conversation.ErrNotFound
+	}
+	return message.Attachment{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ConversationID: f.id, Kind: "image", ContentType: "image/jpeg", ByteSize: 1, CreatedAt: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}, nil
+}
+
+func (f *conversationFake) OpenConversationAttachment(context.Context, string, string, string) (string, error) {
+	if f.hidden {
+		return "", conversation.ErrNotFound
+	}
+	if f.rejectAttachment {
+		return "", conversation.ErrAttachment
+	}
+	return "https://blob.invalid/get?key=conversations", nil
 }
 
 func (f *conversationFake) view() conversation.Conversation {

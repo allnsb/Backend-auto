@@ -25,6 +25,8 @@ func testConversations(t *testing.T, ctx context.Context, migrationURL string, r
 	defer ownerPool.Close()
 	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
 		GRANT SELECT ON odysseia.users, odysseia.forum_members, odysseia.message_streams, odysseia.messages TO odysseia_runtime;
+		GRANT SELECT, INSERT, UPDATE ON odysseia.attachments TO odysseia_runtime;
+		GRANT SELECT, INSERT ON odysseia.message_attachments TO odysseia_runtime;
 		GRANT SELECT, INSERT ON odysseia.conversations, odysseia.conversation_members TO odysseia_runtime;
 		GRANT INSERT ON odysseia.message_streams, odysseia.messages TO odysseia_runtime;
 		GRANT UPDATE (owner_id, dissolved_at, dm_low, dm_high) ON odysseia.conversations TO odysseia_runtime;

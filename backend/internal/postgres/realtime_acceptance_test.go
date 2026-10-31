@@ -199,7 +199,7 @@ func TestRealtimeBacklogExpiryAndHTTPHandoff(t *testing.T) {
 	}
 	expected := append([]forum.Entry{f.topic.OpeningMessage, baseline, missingFromCache}, queued...)
 	for _, want := range expected {
-		if merged[want.ID] != want {
+		if !sameStoredEntry(merged[want.ID], want) {
 			t.Fatal("snapshot lost committed content")
 		}
 	}
@@ -214,7 +214,7 @@ func TestRealtimeBacklogExpiryAndHTTPHandoff(t *testing.T) {
 		if err := json.Unmarshal(event.Data, &entry); err != nil {
 			t.Fatal(err)
 		}
-		if entry != want || seenEvents[event.ID] || event.Position != want.Sequence {
+		if !sameStoredEntry(entry, want) || seenEvents[event.ID] || event.Position != want.Sequence {
 			t.Fatal("backlog delivery lost, duplicated or reordered an event")
 		}
 		seenEvents[event.ID] = true

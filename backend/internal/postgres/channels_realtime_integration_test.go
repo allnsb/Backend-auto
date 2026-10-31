@@ -114,7 +114,7 @@ func readChannelPublication(t *testing.T, ctx context.Context, peer *clusterPeer
 	if err := json.Unmarshal(event.Data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got != want || event.Position != want.Sequence || publication.Offset == 0 {
+	if !sameStoredMessage(got, want) || event.Position != want.Sequence || publication.Offset == 0 {
 		t.Fatal("channel WSS content differs from its committed message")
 	}
 	return channelPublication{ID: event.ID, Offset: publication.Offset}

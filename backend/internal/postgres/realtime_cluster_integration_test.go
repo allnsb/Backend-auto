@@ -184,7 +184,7 @@ func readClusterMessages(t *testing.T, ctx context.Context, peer *clusterPeer, e
 		if err := json.Unmarshal(event.Data, &got); err != nil {
 			t.Fatal(err)
 		}
-		if got != want || event.Position != want.Sequence || publication.Offset == 0 || publication.Offset <= delivered.lastOffset {
+		if !sameStoredEntry(got, want) || event.Position != want.Sequence || publication.Offset == 0 || publication.Offset <= delivered.lastOffset {
 			t.Fatal("cluster delivery lost, duplicated or reordered committed content")
 		}
 		delivered.ids = append(delivered.ids, event.ID)

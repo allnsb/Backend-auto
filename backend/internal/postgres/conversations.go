@@ -291,11 +291,18 @@ func (s *Forums) ListConversationMessages(ctx context.Context, actor, id string,
 	if err != nil {
 		return nil, err
 	}
-	return collectMessages(rows)
+	items, err := collectMessages(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := fillAttachments(ctx, s.pool, items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (s *Forums) SendConversationMessage(ctx context.Context, actor, id, requestID string, draft conversation.MessageDraft) (message.Message, error) {
-	if err := draft.Validate(); err != nil {
+	if err := draft.Validate(s.maxAttachments); err != nil {
 		return message.Message{}, err
 	}
 	if err := validConversationID(actor, id, requestID); err != nil {
@@ -320,13 +327,21 @@ func (s *Forums) SendConversationMessage(ctx context.Context, actor, id, request
 			return err
 		}
 		if state.found {
-			result = state.previous
+			loaded := []message.Message{state.previous}
+			if err := fillAttachments(ctx, tx, loaded); err != nil {
+				return err
+			}
+			result = loaded[0]
 			return nil
 		}
 		if draft.QuoteID != "" && !state.quoteOK {
 			return conversation.ErrReference
 		}
-		result, err = appendConversationMessage(ctx, tx, actor, id, draft, requestID, digest[:], state)
+		attached, err := lockAttachments(ctx, tx, actor, id, draft.AttachmentIDs)
+		if err != nil {
+			return err
+		}
+		result, err = appendConversationMessage(ctx, tx, actor, id, draft, requestID, digest[:], state, attached)
 		return err
 	})
 	return result, err
@@ -597,8 +612,12 @@ type lockedMessage struct {
 }
 
 func (s *Forums) visibleConversation(ctx context.Context, actor, id string) error {
+	return visibleConversationQuery(ctx, s.pool, actor, id)
+}
+
+func visibleConversationQuery(ctx context.Context, q rowQueryer, actor, id string) error {
 	var found string
-	err := s.pool.QueryRow(ctx, `SELECT c.id::text FROM odysseia.conversations c
+	err := q.QueryRow(ctx, `SELECT c.id::text FROM odysseia.conversations c
 		JOIN odysseia.conversation_members m ON m.conversation_id = c.id
 		WHERE c.id = $1 AND m.user_id = $2 AND m.removed_at IS NULL AND c.dissolved_at IS NULL`, id, actor).Scan(&found)
 	return conversationError(err)
@@ -845,10 +864,10 @@ func lockConversationMessage(ctx context.Context, tx pgx.Tx, actor, id, requestI
 	return state, tx.SendBatch(ctx, batch).Close()
 }
 
-func appendConversationMessage(ctx context.Context, tx pgx.Tx, actor, id string, draft conversation.MessageDraft, requestID string, digest []byte, state lockedMessage) (message.Message, error) {
+func appendConversationMessage(ctx context.Context, tx pgx.Tx, actor, id string, draft conversation.MessageDraft, requestID string, digest []byte, state lockedMessage, attached []message.Attachment) (message.Message, error) {
 	msg := message.Message{
 		ID: uuid.NewString(), StreamID: id, Sequence: state.last + 1, AuthorID: actor,
-		Body: draft.Body, QuoteID: draft.QuoteID, CreatedAt: state.at,
+		Body: draft.Body, QuoteID: draft.QuoteID, Attachments: attached, CreatedAt: state.at,
 	}
 	payload, err := json.Marshal(msg)
 	if err != nil {
@@ -871,6 +890,17 @@ func appendConversationMessage(ctx context.Context, tx pgx.Tx, actor, id string,
 		}
 		return nil
 	})
+	if len(attached) > 0 {
+		linkIDs := make([]string, len(attached))
+		positions := make([]int32, len(attached))
+		for index, item := range attached {
+			linkIDs[index] = item.ID
+			positions[index] = int32(index)
+		}
+		batch.Queue(`INSERT INTO odysseia.message_attachments (message_id, attachment_id, position)
+			SELECT $1, link.id, link.pos::smallint
+			FROM unnest($2::uuid[], $3::int[]) AS link(id, pos)`, msg.ID, linkIDs, positions)
+	}
 	// The author's own message advances that author's cursor. Peers keep their
 	// cursors, and this statement does not update the conversations row.
 	batch.Queue(`UPDATE odysseia.conversation_members SET last_read_position = $3

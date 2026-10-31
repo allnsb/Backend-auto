@@ -57,3 +57,22 @@ func TestGroupDraftNormalizesMembers(t *testing.T) {
 		t.Fatal("limit counts the owner")
 	}
 }
+
+func TestMessageDraftAllowsEmptyBodyOnlyWithAttachments(t *testing.T) {
+	id := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := (MessageDraft{Body: "hello"}).Validate(MaxAttachmentsPerMessage); err != nil {
+		t.Fatal(err)
+	}
+	if err := (MessageDraft{}).Validate(MaxAttachmentsPerMessage); err != ErrInvalid {
+		t.Fatal("empty text accepted")
+	}
+	if err := (MessageDraft{AttachmentIDs: []string{id}}).Validate(MaxAttachmentsPerMessage); err != nil {
+		t.Fatal(err)
+	}
+	if err := (MessageDraft{Body: "hello", AttachmentIDs: []string{id, id}}).Validate(MaxAttachmentsPerMessage); err != ErrInvalid {
+		t.Fatal("duplicate attachment accepted")
+	}
+	if err := (MessageDraft{AttachmentIDs: []string{id, id, id, id, id}}).Validate(MaxAttachmentsPerMessage); err != ErrInvalid {
+		t.Fatal("too many attachments accepted")
+	}
+}

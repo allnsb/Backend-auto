@@ -1,6 +1,7 @@
-// Package conversation is the text direct-message and group slice.
-// Message bodies stay in the shared message stream. This package does not
-// grant forum roles, deliver files, or publish read receipts to other members.
+// Package conversation is the direct-message and group slice.
+// Message bodies stay in the shared message stream. Image and voice bytes are
+// stored separately and linked onto a message. This package does not grant
+// forum roles or publish read receipts to other members.
 package conversation
 
 import (
@@ -24,7 +25,13 @@ var (
 	ErrForbidden   = errors.New("caller cannot manage this conversation")
 	ErrLastManager = errors.New("group owner must transfer or dissolve")
 	ErrBusy        = errors.New("conversation write capacity is temporarily exhausted")
+	ErrAttachment  = errors.New("attachment cannot be bound to this message")
+	ErrQuota       = errors.New("attachment quota is exhausted")
+	ErrRate        = errors.New("attachment upload rate is exhausted")
 )
+
+// MaxAttachmentsPerMessage is the database ceiling. Configuration may only lower it.
+const MaxAttachmentsPerMessage = 4
 
 const (
 	MaxTitleRunes = 200
@@ -106,15 +113,38 @@ func (d *GroupDraft) Normalize(actor string, limit int) error {
 }
 
 type MessageDraft struct {
-	Body    string `json:"body"`
-	QuoteID string `json:"quote_id,omitempty"`
+	Body          string   `json:"body"`
+	QuoteID       string   `json:"quote_id,omitempty"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
-func (d MessageDraft) Validate() error {
+// Validate allows an empty body only when at least one attachment id is present.
+// maxAttachments is the process ceiling and cannot exceed MaxAttachmentsPerMessage.
+// A nil AttachmentIDs field stays out of the idempotency JSON, matching text-only requests.
+func (d MessageDraft) Validate(maxAttachments int) error {
+	if maxAttachments < 1 || maxAttachments > MaxAttachmentsPerMessage {
+		return ErrInvalid
+	}
 	if d.QuoteID != "" && validID(d.QuoteID) != nil {
 		return ErrInvalid
 	}
-	return validBody(d.Body)
+	if len(d.AttachmentIDs) > maxAttachments {
+		return ErrInvalid
+	}
+	seen := make(map[string]struct{}, len(d.AttachmentIDs))
+	for _, id := range d.AttachmentIDs {
+		if validID(id) != nil {
+			return ErrInvalid
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalid
+		}
+		seen[id] = struct{}{}
+	}
+	if len(d.AttachmentIDs) == 0 {
+		return validBody(d.Body)
+	}
+	return validOptionalBody(d.Body)
 }
 
 type ReadState struct {
@@ -183,10 +213,17 @@ func validTitle(title string) error {
 }
 
 func validBody(body string) error {
-	if !utf8.ValidString(body) || strings.ContainsRune(body, 0) {
+	if err := validOptionalBody(body); err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) == "" {
 		return ErrInvalid
 	}
-	if strings.TrimSpace(body) == "" || len(body) > MaxBodyBytes {
+	return nil
+}
+
+func validOptionalBody(body string) error {
+	if !utf8.ValidString(body) || strings.ContainsRune(body, 0) || len(body) > MaxBodyBytes {
 		return ErrInvalid
 	}
 	return nil
