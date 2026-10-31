@@ -183,6 +183,40 @@ func TestInspectVoiceDuration(t *testing.T) {
 	}
 }
 
+func TestInspectShortTKHDReturnsCorrupt(t *testing.T) {
+	if _, err := readTKHD(nil); err != ErrCorrupt {
+		t.Fatalf("nil tkhd err=%v", err)
+	}
+	limits := DefaultLimits()
+	version1Short := append([]byte{1}, make([]byte, 22)...)
+	illegal := make([]byte, 24)
+	illegal[0] = 2
+	for _, payload := range [][]byte{nil, {}, {0}, make([]byte, 15), version1Short, illegal} {
+		got, err := Inspect(mp4WithTKHD(payload), 1500, limits)
+		if err != ErrCorrupt || got.Bytes != nil || got.Kind != "" {
+			t.Fatalf("tkhd len=%d err=%v kind=%q bytes=%d", len(payload), err, got.Kind, len(got.Bytes))
+		}
+	}
+
+	version0 := make([]byte, 16)
+	binary.BigEndian.PutUint32(version0[12:16], 7)
+	id, err := readTKHD(version0)
+	if err != nil || id != 7 {
+		t.Fatalf("version 0 id=%d err=%v", id, err)
+	}
+	version1 := make([]byte, 24)
+	version1[0] = 1
+	binary.BigEndian.PutUint32(version1[20:24], 1)
+	id, err = readTKHD(version1)
+	if err != nil || id != 1 {
+		t.Fatalf("version 1 id=%d err=%v", id, err)
+	}
+	got, err := Inspect(mp4WithTKHD(version1), 1500, limits)
+	if err != nil || got.ContentType != "audio/mp4" || got.DurationMS != 1500 {
+		t.Fatalf("version 1 file duration=%d err=%v type=%s", got.DurationMS, err, got.ContentType)
+	}
+}
+
 func mustWideJPEG(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -359,6 +393,18 @@ func riffChunk(id string, data []byte) []byte {
 		out = append(out, 0)
 	}
 	return out
+}
+
+func mp4WithTKHD(tkhd []byte) []byte {
+	ftyp := mp4Box("ftyp", []byte("M4A \x00\x00\x00\x00M4A "))
+	mvhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(mvhd[12:16], 1000)
+	binary.BigEndian.PutUint32(mvhd[16:20], 1500)
+	hdlr := make([]byte, 12)
+	copy(hdlr[8:12], "soun")
+	trak := append(mp4Box("tkhd", tkhd), mp4Box("mdia", mp4Box("hdlr", hdlr))...)
+	moov := append(mp4Box("mvhd", mvhd), mp4Box("trak", trak)...)
+	return append(ftyp, mp4Box("moov", moov)...)
 }
 
 func buildMP4(durationMS int, handlers ...string) []byte {
