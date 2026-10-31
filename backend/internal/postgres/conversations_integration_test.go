@@ -27,7 +27,7 @@ func testConversations(t *testing.T, ctx context.Context, migrationURL string, r
 		GRANT SELECT ON odysseia.users, odysseia.forum_members, odysseia.message_streams, odysseia.messages TO odysseia_runtime;
 		GRANT SELECT, INSERT ON odysseia.conversations, odysseia.conversation_members TO odysseia_runtime;
 		GRANT INSERT ON odysseia.message_streams, odysseia.messages TO odysseia_runtime;
-		GRANT UPDATE (owner_id, dissolved_at) ON odysseia.conversations TO odysseia_runtime;
+		GRANT UPDATE (owner_id, dissolved_at, dm_low, dm_high) ON odysseia.conversations TO odysseia_runtime;
 		GRANT UPDATE (role, joined_position, last_read_position, joined_at, removed_at) ON odysseia.conversation_members TO odysseia_runtime;
 		GRANT UPDATE (last_position) ON odysseia.message_streams TO odysseia_runtime;
 		GRANT INSERT (method, payload) ON odysseia.realtime_outbox TO odysseia_runtime;
@@ -256,6 +256,92 @@ func testConversations(t *testing.T, ctx context.Context, migrationURL string, r
 	}
 	testConversationMemberCeiling(t, ctx, ownerPool, small.ID)
 	testConversationDowngradeGuard(t, ctx, ownerPool)
+	testRemovedMemberReplayStaysOut(t, ctx, store, ownerPool, alice.ID, bob.ID)
+	testDirectLeaveIsNotReversed(t, ctx, store, ownerPool, alice.ID, dave.ID)
+}
+
+func testRemovedMemberReplayStaysOut(t *testing.T, ctx context.Context, store *Forums, owner *pgxpool.Pool, alice, bob string) {
+	t.Helper()
+	key := uuid.NewString()
+	draft := conversation.GroupDraft{Title: "重放", MemberIDs: []string{bob}}
+	room, err := store.CreateGroup(ctx, alice, key, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := store.CreateGroup(ctx, alice, key, draft)
+	if err != nil || replay.ID != room.ID {
+		t.Fatalf("active replay %+v err=%v", replay, err)
+	}
+	if _, err := store.TransferConversationOwner(ctx, alice, room.ID, bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RemoveConversationMember(ctx, bob, room.ID, alice); err != nil {
+		t.Fatal(err)
+	}
+	added := countQuery(t, ctx, owner, `SELECT count(*) FROM odysseia.realtime_outbox WHERE payload#>>'{data,type}'='conversation.member.added' AND payload#>>'{data,scope_id}'=$1`, room.ID)
+	if _, err := store.CreateGroup(ctx, alice, key, draft); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("kicked creator replay: %v", err)
+	}
+	if _, err := store.GetConversation(ctx, alice, room.ID); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatal("kicked creator can read after replay")
+	}
+	if _, err := store.SendConversationMessage(ctx, alice, room.ID, uuid.NewString(), conversation.MessageDraft{Body: "back"}); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatal("kicked creator can write after replay")
+	}
+	assertConversationCount(t, ctx, owner, 1, `SELECT count(*) FROM odysseia.conversation_members WHERE conversation_id=$1 AND removed_at IS NULL`, room.ID)
+	assertConversationCount(t, ctx, owner, added, `SELECT count(*) FROM odysseia.realtime_outbox WHERE payload#>>'{data,type}'='conversation.member.added' AND payload#>>'{data,scope_id}'=$1`, room.ID)
+}
+
+func testDirectLeaveIsNotReversed(t *testing.T, ctx context.Context, store *Forums, owner *pgxpool.Pool, alice, dave string) {
+	t.Helper()
+	key := uuid.NewString()
+	original, owned, err := store.OpenDM(ctx, alice, key, conversation.DMDraft{UserID: dave})
+	if err != nil || !owned {
+		t.Fatal(err)
+	}
+	if err := store.RemoveConversationMember(ctx, alice, original.ID, alice); err != nil {
+		t.Fatal(err)
+	}
+	reopened, owned, err := store.OpenDM(ctx, dave, uuid.NewString(), conversation.DMDraft{UserID: alice})
+	if err != nil || owned || reopened.ID != original.ID || len(reopened.Members) != 1 || reopened.Members[0].UserID != dave {
+		t.Fatalf("peer reopen restored the leaver: owned=%v %+v err=%v", owned, reopened, err)
+	}
+	if _, err := store.GetConversation(ctx, alice, original.ID); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatal("leaver was restored")
+	}
+	if _, _, err := store.OpenDM(ctx, alice, key, conversation.DMDraft{UserID: dave}); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("left member replay: %v", err)
+	}
+	assertConversationCount(t, ctx, owner, 1, `SELECT count(*) FROM odysseia.conversations WHERE id=$1 AND dm_low IS NOT NULL`, original.ID)
+	fresh, owned, err := store.OpenDM(ctx, alice, uuid.NewString(), conversation.DMDraft{UserID: dave})
+	if err != nil || !owned || fresh.ID == original.ID || len(fresh.Members) != 2 {
+		t.Fatalf("new pair %+v owned=%v err=%v", fresh, owned, err)
+	}
+	if _, err := store.GetConversation(ctx, alice, original.ID); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatal("new pair restored the old membership")
+	}
+	var released bool
+	if err := owner.QueryRow(ctx, `SELECT dm_low IS NULL AND dm_high IS NULL FROM odysseia.conversations WHERE id=$1`, original.ID).Scan(&released); err != nil || !released {
+		t.Fatalf("old pair slot released=%v err=%v", released, err)
+	}
+	var forumID string
+	if err := owner.QueryRow(ctx, `SELECT forum_id::text FROM odysseia.forum_members WHERE user_id=$1 LIMIT 1`, dave).Scan(&forumID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `DELETE FROM odysseia.forum_members WHERE forum_id=$1 AND user_id=$2`, forumID, dave); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RemoveConversationMember(ctx, alice, fresh.ID, alice); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.OpenDM(ctx, alice, uuid.NewString(), conversation.DMDraft{UserID: dave}); !errors.Is(err, conversation.ErrNotFound) {
+		t.Fatalf("new pair without a shared forum: %v", err)
+	}
+	assertConversationCount(t, ctx, owner, 1, `SELECT count(*) FROM odysseia.conversations WHERE id=$1 AND dm_low IS NOT NULL`, fresh.ID)
+	assertConversationCount(t, ctx, owner, 2, `SELECT count(*) FROM odysseia.conversations c JOIN odysseia.conversation_members m ON m.conversation_id=c.id AND m.user_id=$1 WHERE c.kind='dm'`, dave)
+	if _, err := owner.Exec(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id) VALUES ($1, $2)`, forumID, dave); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testConversationMemberCeiling(t *testing.T, ctx context.Context, owner *pgxpool.Pool, conversationID string) {

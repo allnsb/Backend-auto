@@ -31,9 +31,11 @@ END $$;
 ALTER TABLE odysseia.message_streams
     ADD CONSTRAINT message_streams_kind_check CHECK (kind IN ('topic', 'channel', 'conversation'));
 
--- One direct pair is one stream. Groups keep a single owner_id; dm columns stay
--- null. List order uses the latest message timestamp, so this table is not
--- updated when a message is appended.
+-- One live direct pair occupies dm_low/dm_high. Leaving does not restore that
+-- membership. A later open that starts a new pair clears those columns on the
+-- old row; PostgreSQL unique treats the nulls as distinct, so history can stay
+-- while the slot is free. Groups keep a single owner_id. List order uses the
+-- latest message timestamp, so this table is not updated when a message is appended.
 CREATE TABLE odysseia.conversations (
     id uuid PRIMARY KEY REFERENCES odysseia.message_streams(id),
     stream_kind text GENERATED ALWAYS AS ('conversation'::text) STORED,
@@ -51,13 +53,15 @@ CREATE TABLE odysseia.conversations (
     CONSTRAINT conversations_dm_pair UNIQUE (dm_low, dm_high),
     CONSTRAINT conversations_request UNIQUE (created_by, request_id),
     CHECK (
-        (kind = 'dm' AND dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high
-            AND owner_id IS NULL AND title IS NULL AND dissolved_at IS NULL)
+        (kind = 'dm' AND owner_id IS NULL AND title IS NULL AND dissolved_at IS NULL
+            AND ((dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high)
+                OR (dm_low IS NULL AND dm_high IS NULL)))
         OR
         (kind = 'group' AND dm_low IS NULL AND dm_high IS NULL AND owner_id IS NOT NULL
             AND title IS NOT NULL AND length(btrim(title)) BETWEEN 1 AND 200)
     )
 );
+COMMENT ON COLUMN odysseia.conversations.dm_low IS 'Live direct-pair slot, ordered below dm_high. Null after the slot is released; removed members are not restored into the old row.';
 
 -- joined_position records where the member entered. This slice stores 0 and
 -- does not filter history: a new member can read every earlier message.

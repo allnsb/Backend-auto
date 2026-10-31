@@ -80,8 +80,10 @@ func (s *Forums) memberLimit() int {
 	return s.conversationMemberLimit
 }
 
-// OpenDM returns the single conversation for the pair. owned is true when this
-// idempotency key is the one stored on that row, including a replay.
+// OpenDM returns a direct conversation. owned is true only when this request
+// key is stored on the returned row. A replay does not restore a removed
+// member. Opening an existing pair does not restore the other person either;
+// a new pair is created only after the shared-forum check, and only with a new key.
 func (s *Forums) OpenDM(ctx context.Context, actor, requestID string, draft conversation.DMDraft) (conversation.Conversation, bool, error) {
 	if err := draft.Validate(actor); err != nil {
 		return conversation.Conversation{}, false, err
@@ -102,11 +104,13 @@ func (s *Forums) OpenDM(ctx context.Context, actor, requestID string, draft conv
 	if err := s.rejectChangedRequest(ctx, actor, requestID, digest); err != nil {
 		return conversation.Conversation{}, false, err
 	}
-	exists, err := s.dmPairExists(ctx, low, high)
+	// An active member may reopen without another forum check. Starting a pair
+	// the caller is not in, including after they left, checks the intersection again.
+	active, err := s.liveDMActive(ctx, low, high, actor)
 	if err != nil {
 		return conversation.Conversation{}, false, err
 	}
-	if !exists {
+	if !active {
 		shared, err := s.sharesForum(ctx, actor, draft.UserID)
 		if err != nil {
 			return conversation.Conversation{}, false, err
@@ -147,8 +151,14 @@ func (s *Forums) openDM(ctx context.Context, actor, requestID, peer, low, high s
 			return err
 		}
 		if found {
-			result, err = s.restoreDM(ctx, tx, actor, current)
-			return err
+			active, err := memberActive(ctx, tx, current, actor)
+			if err != nil {
+				return err
+			}
+			if active {
+				result, err = loadConversation(ctx, tx, actor, current)
+				return err
+			}
 		}
 		shared, err := sharesForumTx(ctx, tx, actor, peer)
 		if err != nil {
@@ -156,6 +166,11 @@ func (s *Forums) openDM(ctx context.Context, actor, requestID, peer, low, high s
 		}
 		if !shared {
 			return conversation.ErrNotFound
+		}
+		if found {
+			if err := releaseDMPair(ctx, tx, current); err != nil {
+				return err
+			}
 		}
 		result, err = insertDM(ctx, tx, actor, low, high, requestID, digest)
 		owned = err == nil
@@ -604,10 +619,14 @@ func (s *Forums) rejectChangedRequest(ctx context.Context, actor, requestID stri
 	return nil
 }
 
-func (s *Forums) dmPairExists(ctx context.Context, low, high string) (bool, error) {
-	var exists bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM odysseia.conversations WHERE dm_low = $1 AND dm_high = $2)`, low, high).Scan(&exists)
-	return exists, err
+func (s *Forums) liveDMActive(ctx context.Context, low, high, actor string) (bool, error) {
+	var active bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM odysseia.conversations c
+		JOIN odysseia.conversation_members m ON m.conversation_id = c.id
+		WHERE c.dm_low = $1 AND c.dm_high = $2 AND m.user_id = $3 AND m.removed_at IS NULL AND c.dissolved_at IS NULL
+	)`, low, high, actor).Scan(&active)
+	return active, err
 }
 
 func (s *Forums) sharesForum(ctx context.Context, actor, peer string) (bool, error) {
@@ -679,8 +698,20 @@ func previousConversation(ctx context.Context, tx pgx.Tx, actor, requestID strin
 	if !bytes.Equal(stored, digest[:]) {
 		return conversation.Conversation{}, false, conversation.ErrConflict
 	}
-	if _, err := restoreMember(ctx, tx, id, actor); err != nil {
-		return conversation.Conversation{}, false, err
+	// Lock the conversation before deciding. A replay must not clear removed_at,
+	// raise the member ceiling, or emit member.added. Non-members get the same
+	// 404 as any other hidden conversation.
+	var active bool
+	err = tx.QueryRow(ctx, `SELECT m.user_id IS NOT NULL AND m.removed_at IS NULL AND c.dissolved_at IS NULL
+		FROM odysseia.conversations c
+		LEFT JOIN odysseia.conversation_members m ON m.conversation_id = c.id AND m.user_id = $2
+		WHERE c.id = $1
+		FOR UPDATE OF c`, id, actor).Scan(&active)
+	if err != nil {
+		return conversation.Conversation{}, false, conversationError(err)
+	}
+	if !active {
+		return conversation.Conversation{}, false, conversation.ErrNotFound
 	}
 	result, err := loadConversation(ctx, tx, actor, id)
 	return result, true, err
@@ -695,43 +726,22 @@ func findDM(ctx context.Context, tx pgx.Tx, low, high string) (string, bool, err
 	return id, err == nil, err
 }
 
-func (s *Forums) restoreDM(ctx context.Context, tx pgx.Tx, actor, id string) (conversation.Conversation, error) {
-	var peer string
-	err := tx.QueryRow(ctx, `SELECT user_id::text FROM odysseia.conversation_members
-		WHERE conversation_id = $1 AND user_id <> $2`, id, actor).Scan(&peer)
-	if err != nil {
-		return conversation.Conversation{}, conversationError(err)
-	}
-	restored := make([]string, 0, 2)
-	for _, userID := range []string{actor, peer} {
-		ok, err := restoreMember(ctx, tx, id, userID)
-		if err != nil {
-			return conversation.Conversation{}, err
-		}
-		if ok {
-			restored = append(restored, userID)
-		}
-	}
-	var last int64
-	if err := tx.QueryRow(ctx, `SELECT last_position FROM odysseia.message_streams WHERE id = $1`, id).Scan(&last); err != nil {
-		return conversation.Conversation{}, err
-	}
-	for _, userID := range restored {
-		if err := enqueueInbox(ctx, tx, id, eventConversationMemberAdded, last, memberData{UserID: userID, Role: "member"}, "", ""); err != nil {
-			return conversation.Conversation{}, err
-		}
-	}
-	return loadConversation(ctx, tx, actor, id)
+func memberActive(ctx context.Context, tx pgx.Tx, conversationID, userID string) (bool, error) {
+	var active bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM odysseia.conversation_members
+		WHERE conversation_id = $1 AND user_id = $2 AND removed_at IS NULL
+	)`, conversationID, userID).Scan(&active)
+	return active, err
 }
 
-func restoreMember(ctx context.Context, tx pgx.Tx, conversationID, userID string) (bool, error) {
-	tag, err := tx.Exec(ctx, `UPDATE odysseia.conversation_members
-		SET removed_at = NULL, joined_at = statement_timestamp()
-		WHERE conversation_id = $1 AND user_id = $2 AND removed_at IS NOT NULL`, conversationID, userID)
-	if err != nil {
-		return false, err
-	}
-	return tag.RowsAffected() == 1, nil
+// releaseDMPair frees the canonical pair without restoring removed members and
+// without dissolving the old conversation for whoever is still in it.
+func releaseDMPair(ctx context.Context, tx pgx.Tx, conversationID string) error {
+	_, err := tx.Exec(ctx, `UPDATE odysseia.conversations
+		SET dm_low = NULL, dm_high = NULL
+		WHERE id = $1 AND kind = 'dm' AND dm_low IS NOT NULL`, conversationID)
+	return err
 }
 
 func insertDM(ctx context.Context, tx pgx.Tx, actor, low, high, requestID string, digest [32]byte) (conversation.Conversation, error) {

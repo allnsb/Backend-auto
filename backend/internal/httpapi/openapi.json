@@ -1503,7 +1503,7 @@
     "/v1/conversations/dm": {
       "post": {
         "operationId": "openDirectConversation",
-        "description": "Opens the single text conversation for the caller and user_id. Both users must already share a forum, otherwise the response is resource_not_found and no row is created. A later open of the same pair returns that conversation even if one user has left a forum. An idempotency replay that owns the row returns 201; a pair created by another request returns 200. Changed content for the same key returns 409.",
+        "description": "Opens a text conversation with user_id. Creating a pair requires a shared forum. If the caller is already an active member, the live pair is returned and a removed peer is not restored. After the caller has left, the same idempotency key returns resource_not_found and does not restore membership. A new key checks the shared forum again and, when it still holds, creates a new conversation; the old row keeps its history for whoever remains. Changed content for the same key returns 409.",
         "security": [
           {
             "accessToken": []
@@ -1582,7 +1582,7 @@
     "/v1/conversations/groups": {
       "post": {
         "operationId": "createGroupConversation",
-        "description": "Creates a text group. The caller is the only owner. member_ids are other users who each share a forum with the caller; order is not significant. The member ceiling defaults to 50 and can be lowered with ODYSSEIA_CONVERSATION_MEMBER_LIMIT. Exact retries return the original group.",
+        "description": "Creates a text group. The caller is the only owner. member_ids are other users who each share a forum with the caller; order is not significant. The member ceiling defaults to 50 and can be lowered with ODYSSEIA_CONVERSATION_MEMBER_LIMIT. An exact retry returns the original group only while the caller is still an active member. After removal, that same key returns resource_not_found and does not restore the caller.",
         "security": [
           {
             "accessToken": []
