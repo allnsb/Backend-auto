@@ -24,8 +24,10 @@ type Get struct {
 	TTL                time.Duration
 }
 
-// Store hides the provider. Put and Delete run only on the API side.
-// PresignGet does not transfer the object.
+// Store hides the provider. Put and Delete run only on the server side.
+// PresignGet does not transfer the object. Delete of a missing key succeeds
+// so the retention sweep can retry. One key per Delete: R2 rejects the CRC32
+// checksum that aws-sdk-go-v2 attaches to DeleteObjects.
 type Store interface {
 	Put(ctx context.Context, object Object) error
 	PresignGet(ctx context.Context, get Get) (string, error)

@@ -14,6 +14,9 @@ type Attachment struct {
 	Height         int       `json:"height,omitempty"`
 	DurationMS     int       `json:"duration_ms,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+	// Expired is set after the sweep removed the object and kept this message
+	// link. Ready attachments omit it. Download of an expired attachment is not found.
+	Expired bool `json:"expired,omitempty"`
 }
 
 // Message has no dependency on forums, works, databases or realtime providers.

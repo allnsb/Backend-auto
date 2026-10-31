@@ -46,6 +46,8 @@ func (m *Memory) PresignGet(_ context.Context, get Get) (string, error) {
 	return "https://blob.invalid/get?key=" + url.QueryEscape(get.Key) + "&ttl=" + url.QueryEscape(get.TTL.String()), nil
 }
 
+// Delete removes the key when it is present. A missing key still succeeds so
+// tests can rerun a sweep that already removed the object.
 func (m *Memory) Delete(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

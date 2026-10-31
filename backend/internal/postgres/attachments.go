@@ -58,8 +58,9 @@ func (s *Forums) UseAttachments(settings AttachmentSettings) error {
 
 // UploadConversationAttachment re-checks the bytes, writes the object, then
 // inserts a ready row for the uploader. The database row is the record that a
-// later message may bind. A failed insert deletes the object; a failed delete
-// can leave an unreferenced object until an operator removes it.
+// later message may bind. A failed insert deletes the object. If that delete
+// also fails, the object has no row; the retention sweep only sees rows, and
+// the conversations/ lifecycle is the backstop for that leftover.
 func (s *Forums) UploadConversationAttachment(ctx context.Context, actor, conversationID string, prepared media.Prepared) (message.Attachment, error) {
 	if s.blobs == nil {
 		return message.Attachment{}, errors.New("attachment storage is not configured")
@@ -117,8 +118,9 @@ func (s *Forums) UploadConversationAttachment(ctx context.Context, actor, conver
 
 // OpenConversationAttachment returns a short-lived GET URL for an active member.
 // Another member can fetch the object only after it is bound to a message.
-// The uploader can fetch their own ready object before sending. Non-members,
-// removed members, and unknown ids are the same not-found result.
+// The uploader can fetch their own ready object before sending. Expired
+// attachments, non-members, removed members, and unknown ids are the same
+// not-found result. History still lists an expired attachment.
 func (s *Forums) OpenConversationAttachment(ctx context.Context, actor, conversationID, attachmentID string) (string, error) {
 	if s.blobs == nil {
 		return "", errors.New("attachment storage is not configured")
@@ -152,8 +154,10 @@ func (s *Forums) OpenConversationAttachment(ctx context.Context, actor, conversa
 	return signed, nil
 }
 
-const attachmentUsageSQL = `SELECT COALESCE(sum(byte_size), 0),
-	count(*) FILTER (WHERE created_at > transaction_timestamp() - interval '1 minute')
+// Expired rows keep their metadata but the object is gone, so they no longer
+// consume the stored-byte quota. The rate count is recent ready uploads.
+const attachmentUsageSQL = `SELECT COALESCE(sum(byte_size) FILTER (WHERE status = 'ready'), 0),
+	count(*) FILTER (WHERE status = 'ready' AND created_at > transaction_timestamp() - interval '1 minute')
 	FROM odysseia.attachments WHERE uploader_id = $1`
 
 func (s *Forums) rejectAttachmentBudget(ctx context.Context, actor string, extra int64) error {
@@ -258,7 +262,8 @@ func fillAttachments(ctx context.Context, q rowQueryer, items []message.Message)
 		ids[index] = items[index].ID
 	}
 	rows, err := q.Query(ctx, `SELECT link.message_id::text, a.id::text, a.conversation_id::text, a.kind, a.content_type,
-			a.byte_size, COALESCE(a.width, 0), COALESCE(a.height, 0), COALESCE(a.duration_ms, 0), a.created_at
+			a.byte_size, COALESCE(a.width, 0), COALESCE(a.height, 0), COALESCE(a.duration_ms, 0), a.created_at,
+			a.status = 'expired'
 		FROM odysseia.message_attachments link
 		JOIN odysseia.attachments a ON a.id = link.attachment_id
 		WHERE link.message_id = ANY($1::uuid[])
@@ -272,7 +277,7 @@ func fillAttachments(ctx context.Context, q rowQueryer, items []message.Message)
 		var messageID string
 		var item message.Attachment
 		if err := rows.Scan(&messageID, &item.ID, &item.ConversationID, &item.Kind, &item.ContentType,
-			&item.ByteSize, &item.Width, &item.Height, &item.DurationMS, &item.CreatedAt); err != nil {
+			&item.ByteSize, &item.Width, &item.Height, &item.DurationMS, &item.CreatedAt, &item.Expired); err != nil {
 			return err
 		}
 		grouped[messageID] = append(grouped[messageID], item)
