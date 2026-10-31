@@ -29,7 +29,8 @@ func testAttachments(t *testing.T, ctx context.Context, migrationURL string, run
 		t.Fatal(err)
 	}
 	defer owner.Close()
-	if _, err := owner.Exec(ctx, `GRANT SELECT, INSERT ON odysseia.attachments, odysseia.message_attachments TO odysseia_runtime`); err != nil {
+	if _, err := owner.Exec(ctx, `GRANT SELECT, INSERT, UPDATE ON odysseia.attachments TO odysseia_runtime;
+		GRANT SELECT, INSERT ON odysseia.message_attachments TO odysseia_runtime`); err != nil {
 		t.Fatal(err)
 	}
 	users := NewUsers(owner)

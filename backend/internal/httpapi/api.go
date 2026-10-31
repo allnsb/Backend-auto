@@ -73,6 +73,12 @@ func (api *API) SetMediaLimits(limits media.Limits) error {
 type userHandler func(http.ResponseWriter, *http.Request, identity.Actor) error
 
 func (api *API) authenticated(next userHandler) http.HandlerFunc {
+	return api.authenticatedWithin(10*time.Second, next)
+}
+
+// authenticatedWithin bounds one route. Uploads use a longer limit than the
+// default so a 10MiB body on a slow link is not cut off at 10 seconds.
+func (api *API) authenticatedWithin(limit time.Duration, next userHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("WWW-Authenticate", `Bearer realm="odysseia"`)
@@ -86,7 +92,7 @@ func (api *API) authenticated(next userHandler) http.HandlerFunc {
 			writeProblem(w, http.StatusUnauthorized, "invalid_token")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), limit)
 		defer cancel()
 		finish := telemetry.Start(ctx, telemetry.TokenVerification)
 		auth, err := api.verify(ctx, parts[1])

@@ -210,8 +210,10 @@ func readEBMLFloat(payload []byte) (float64, error) {
 	}
 }
 
-// parseMP4 returns the movie-header duration. A video track is rejected so a
-// file labeled audio/mp4 cannot carry a picture.
+// parseMP4 returns the duration in milliseconds. A video track is rejected.
+// A zero movie header is not corrupt: fragmented recordings leave mvhd at 0
+// and put the length in mehd or trun. Zero means the caller should use the
+// client-reported duration and the size floor.
 func parseMP4(data []byte) (int, error) {
 	state := mp4State{}
 	if err := walkMP4(data, 0, &state); err != nil {
@@ -220,16 +222,33 @@ func parseMP4(data []byte) (int, error) {
 	if state.video || !state.ftyp || !state.audio {
 		return 0, ErrType
 	}
-	if !state.haveDuration || state.durationMS < 1 {
+	if state.timescale == 0 {
 		return 0, ErrCorrupt
 	}
-	return state.durationMS, nil
+	ticks := state.headerTicks
+	if ticks == 0 {
+		ticks = state.fragmentTicks
+	}
+	if ticks == 0 {
+		ticks = state.sampleTicks
+	}
+	if ticks == 0 {
+		return 0, nil
+	}
+	ms := ticks * 1000 / uint64(state.timescale)
+	if ms < 1 || ms > uint64(math.MaxInt32) {
+		return 0, ErrDuration
+	}
+	return int(ms), nil
 }
 
 type mp4State struct {
-	ftyp, audio, video, haveDuration bool
-	durationMS                       int
-	boxes                            int
+	ftyp, audio, video bool
+	timescale          uint32
+	headerTicks        uint64
+	fragmentTicks      uint64
+	sampleTicks        uint64
+	boxes              int
 }
 
 func walkMP4(data []byte, depth int, state *mp4State) error {
@@ -264,20 +283,30 @@ func walkMP4(data []byte, depth int, state *mp4State) error {
 		}
 		payload := data[i+header : i+size]
 		switch kind {
-		case "moov", "trak", "mdia", "minf":
+		case "moov", "trak", "mdia", "minf", "mvex", "moof", "traf":
 			if err := walkMP4(payload, depth+1, state); err != nil {
 				return err
 			}
 		case "mvhd":
-			ms, err := readMVHD(payload)
+			timescale, ticks, err := readMVHD(payload)
 			if err != nil {
 				return err
 			}
-			if state.haveDuration {
+			if state.timescale != 0 {
 				return ErrCorrupt
 			}
-			state.durationMS = ms
-			state.haveDuration = true
+			state.timescale = timescale
+			state.headerTicks = ticks
+		case "mehd":
+			ticks, err := readMEHD(payload)
+			if err != nil {
+				return err
+			}
+			state.fragmentTicks = ticks
+		case "trun":
+			if err := addTrun(payload, state); err != nil {
+				return err
+			}
 		case "hdlr":
 			if len(payload) < 12 {
 				return ErrCorrupt
@@ -299,33 +328,258 @@ func walkMP4(data []byte, depth int, state *mp4State) error {
 	return nil
 }
 
-func readMVHD(payload []byte) (int, error) {
+func readMVHD(payload []byte) (uint32, uint64, error) {
 	if len(payload) < 20 {
-		return 0, ErrCorrupt
+		return 0, 0, ErrCorrupt
 	}
 	var timescale uint32
-	var duration uint64
+	var ticks uint64
 	switch payload[0] {
 	case 0:
 		timescale = binary.BigEndian.Uint32(payload[12:16])
-		duration = uint64(binary.BigEndian.Uint32(payload[16:20]))
+		ticks = uint64(binary.BigEndian.Uint32(payload[16:20]))
 	case 1:
 		if len(payload) < 32 {
-			return 0, ErrCorrupt
+			return 0, 0, ErrCorrupt
 		}
 		timescale = binary.BigEndian.Uint32(payload[20:24])
-		duration = binary.BigEndian.Uint64(payload[24:32])
+		ticks = binary.BigEndian.Uint64(payload[24:32])
 	default:
-		return 0, ErrCorrupt
+		return 0, 0, ErrCorrupt
 	}
 	if timescale == 0 {
+		return 0, 0, ErrCorrupt
+	}
+	return timescale, ticks, nil
+}
+
+func readMEHD(payload []byte) (uint64, error) {
+	if len(payload) < 8 {
 		return 0, ErrCorrupt
 	}
-	ms := duration * 1000 / uint64(timescale)
-	if ms > uint64(math.MaxInt32) {
-		return 0, ErrDuration
+	if payload[0] == 1 {
+		if len(payload) < 12 {
+			return 0, ErrCorrupt
+		}
+		return binary.BigEndian.Uint64(payload[4:12]), nil
 	}
-	return int(ms), nil
+	return uint64(binary.BigEndian.Uint32(payload[4:8])), nil
+}
+
+func addTrun(payload []byte, state *mp4State) error {
+	if len(payload) < 8 {
+		return ErrCorrupt
+	}
+	flags := binary.BigEndian.Uint32(payload[:4]) & 0xFFFFFF
+	count := binary.BigEndian.Uint32(payload[4:8])
+	if count > 1_000_000 {
+		return ErrCorrupt
+	}
+	pos := 8
+	if flags&0x1 != 0 {
+		pos += 4
+	}
+	if flags&0x4 != 0 {
+		pos += 4
+	}
+	for range count {
+		if flags&0x100 != 0 {
+			if pos+4 > len(payload) {
+				return ErrCorrupt
+			}
+			state.sampleTicks += uint64(binary.BigEndian.Uint32(payload[pos : pos+4]))
+			pos += 4
+		}
+		if flags&0x200 != 0 {
+			pos += 4
+		}
+		if flags&0x400 != 0 {
+			pos += 4
+		}
+		if flags&0x800 != 0 {
+			pos += 4
+		}
+		if pos > len(payload) {
+			return ErrCorrupt
+		}
+	}
+	return nil
+}
+
+// stripMP4Location drops udta and the ISO 6709 xyz box. Those hold GPS in
+// recorder output. Sample tables and the movie header stay intact.
+func stripMP4Location(data []byte) ([]byte, error) {
+	return rewriteMP4(data, 0)
+}
+
+func rewriteMP4(data []byte, depth int) ([]byte, error) {
+	if depth > 8 {
+		return nil, ErrCorrupt
+	}
+	out := make([]byte, 0, len(data))
+	i := 0
+	boxes := 0
+	for i+8 <= len(data) {
+		boxes++
+		if boxes > 10000 {
+			return nil, ErrCorrupt
+		}
+		size := int(binary.BigEndian.Uint32(data[i : i+4]))
+		kind := string(data[i+4 : i+8])
+		header := 8
+		if size == 1 {
+			if i+16 > len(data) {
+				return nil, ErrCorrupt
+			}
+			large := binary.BigEndian.Uint64(data[i+8 : i+16])
+			if large > uint64(len(data)-i) || large < 16 {
+				return nil, ErrCorrupt
+			}
+			size = int(large)
+			header = 16
+		}
+		if size == 0 {
+			size = len(data) - i
+		}
+		if size < header || i+size > len(data) {
+			return nil, ErrCorrupt
+		}
+		payload := data[i+header : i+size]
+		i += size
+		if kind == "udta" || kind == "xyz " || kind == "\xa9xyz" {
+			continue
+		}
+		body := payload
+		if mp4Container(kind) {
+			rewritten, err := rewriteMP4(payload, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			body = rewritten
+		}
+		out = append(out, writeMP4Box(kind, body)...)
+	}
+	if i != len(data) {
+		return nil, ErrCorrupt
+	}
+	return out, nil
+}
+
+func mp4Container(kind string) bool {
+	switch kind {
+	case "moov", "trak", "mdia", "minf", "stbl", "edts", "mvex", "moof", "traf":
+		return true
+	default:
+		return false
+	}
+}
+
+func writeMP4Box(kind string, payload []byte) []byte {
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint32(out[:4], uint32(len(out)))
+	copy(out[4:8], kind)
+	copy(out[8:], payload)
+	return out
+}
+
+// stripWebMLocation removes Matroska Tags elements. Voice notes do not need
+// them, and recorders put coordinates there. Clusters are copied whole.
+func stripWebMLocation(data []byte) []byte {
+	cleaned, err := filterEBML(data, 0)
+	if err != nil || len(cleaned) == 0 {
+		return data
+	}
+	return cleaned
+}
+
+const ebmlIDTags = 0x1254C367
+
+func filterEBML(data []byte, depth int) ([]byte, error) {
+	if depth > 6 {
+		return nil, ErrCorrupt
+	}
+	out := make([]byte, 0, len(data))
+	i := 0
+	elements := 0
+	for i < len(data) {
+		elements++
+		if elements > 10000 {
+			return nil, ErrCorrupt
+		}
+		start := i
+		id, width, err := readEBMLID(data, i)
+		if err != nil {
+			return nil, err
+		}
+		i += width
+		idBytes := append([]byte(nil), data[start:start+width]...)
+		size, unknown, sizeWidth, err := readEBMLSize(data, i)
+		if err != nil {
+			return nil, err
+		}
+		i += sizeWidth
+		if unknown {
+			if id == ebmlIDCluster {
+				return append(out, data[start:]...), nil
+			}
+			payload, err := filterEBML(data[i:], depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, idBytes...)
+			out = append(out, data[i-sizeWidth:i]...)
+			return append(out, payload...), nil
+		}
+		if size > uint64(len(data)-i) {
+			return nil, ErrCorrupt
+		}
+		end := i + int(size)
+		payload := data[i:end]
+		i = end
+		if id == ebmlIDTags {
+			continue
+		}
+		if ebmlMaster(id) {
+			filtered, err := filterEBML(payload, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, writeEBML(idBytes, filtered)...)
+			continue
+		}
+		out = append(out, data[start:end]...)
+	}
+	return out, nil
+}
+
+func ebmlMaster(id uint64) bool {
+	switch id {
+	case ebmlIDHeader, ebmlIDSegment, ebmlIDInfo, ebmlIDTracks, ebmlIDTrack:
+		return true
+	default:
+		return false
+	}
+}
+
+func writeEBML(id, payload []byte) []byte {
+	size := encodeEBMLSize(len(payload))
+	out := make([]byte, 0, len(id)+len(size)+len(payload))
+	out = append(out, id...)
+	out = append(out, size...)
+	return append(out, payload...)
+}
+
+func encodeEBMLSize(n int) []byte {
+	switch {
+	case n < 0x7F:
+		return []byte{0x80 | byte(n)}
+	case n < 0x3FFF:
+		return []byte{0x40 | byte(n>>8), byte(n)}
+	case n < 0x1FFFFF:
+		return []byte{0x20 | byte(n>>16), byte(n >> 8), byte(n)}
+	default:
+		return []byte{0x10 | byte(n>>24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
 }
 
 // parseOgg returns the duration of a single Opus or Vorbis logical stream.

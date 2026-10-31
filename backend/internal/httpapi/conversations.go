@@ -141,7 +141,10 @@ func (api *API) RegisterConversations(backend ConversationBackend) {
 		}
 		return writeJSON(w, http.StatusCreated, result)
 	}))
-	api.mux.HandleFunc("POST /v1/conversations/{conversation_id}/attachments", api.authenticated(func(w http.ResponseWriter, r *http.Request, actor identity.Actor) error {
+	api.mux.HandleFunc("POST /v1/conversations/{conversation_id}/attachments", api.authenticatedWithin(2*time.Minute, func(w http.ResponseWriter, r *http.Request, actor identity.Actor) error {
+		if err := extendUploadDeadline(w); err != nil {
+			return err
+		}
 		id, err := canonicalID(r.PathValue("conversation_id"))
 		if err != nil {
 			return err
@@ -269,6 +272,20 @@ func (api *API) RegisterConversations(backend ConversationBackend) {
 		}
 		return writeJSON(w, http.StatusOK, subscription{Channel: conversation.InboxChannel(actor.ID)})
 	}))
+}
+
+// extendUploadDeadline replaces the server's 10s read timeout and 30s write
+// timeout for this response only. Other routes keep those limits.
+func extendUploadDeadline(w http.ResponseWriter) error {
+	deadline := time.Now().Add(2 * time.Minute)
+	controller := http.NewResponseController(w)
+	if err := controller.SetReadDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	if err := controller.SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	return nil
 }
 
 func (api *API) readAttachment(w http.ResponseWriter, r *http.Request) (media.Prepared, error) {

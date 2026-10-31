@@ -120,17 +120,21 @@ func Inspect(data []byte, declaredDurationMS int, limits Limits) (Prepared, erro
 	}
 	switch {
 	case isJPEG(data):
-		return inspectImage(data, "image/jpeg", declaredDurationMS, limits, jpeg.DecodeConfig, stripJPEG)
+		return inspectJPEG(data, declaredDurationMS, limits)
 	case isPNG(data):
 		return inspectImage(data, "image/png", declaredDurationMS, limits, png.DecodeConfig, stripPNG)
 	case isGIF(data):
-		return inspectImage(data, "image/gif", declaredDurationMS, limits, gif.DecodeConfig, keepGIF)
+		return inspectImage(data, "image/gif", declaredDurationMS, limits, gif.DecodeConfig, stripGIF)
 	case isWebP(data):
 		return inspectImage(data, "image/webp", declaredDurationMS, limits, webp.DecodeConfig, stripWebP)
 	case isWebM(data):
-		return inspectVoice(data, "audio/webm;codecs=opus", declaredDurationMS, limits, durationWebM)
+		return inspectVoice(stripWebMLocation(data), "audio/webm;codecs=opus", declaredDurationMS, limits, durationWebM)
 	case isMP4(data):
-		return inspectVoice(data, "audio/mp4", declaredDurationMS, limits, parseMP4)
+		cleaned, err := stripMP4Location(data)
+		if err != nil {
+			return Prepared{}, err
+		}
+		return inspectVoice(cleaned, "audio/mp4", declaredDurationMS, limits, parseMP4)
 	case isOgg(data):
 		return inspectVoice(data, "audio/ogg", declaredDurationMS, limits, parseOgg)
 	default:
@@ -157,6 +161,28 @@ func inspectImage(data []byte, contentType string, declared int, limits Limits, 
 		return Prepared{}, ErrCorrupt
 	}
 	return seal("image", contentType, stored, cfg.Width, cfg.Height, 0), nil
+}
+
+func inspectJPEG(data []byte, declared int, limits Limits) (Prepared, error) {
+	if declared != 0 {
+		return Prepared{}, ErrDuration
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return Prepared{}, ErrCorrupt
+	}
+	if err := checkDimensions(cfg.Width, cfg.Height, limits); err != nil {
+		return Prepared{}, err
+	}
+	stored, err := stripJPEG(data)
+	if err != nil {
+		return Prepared{}, err
+	}
+	if int64(len(stored)) > limits.MaxBytes || len(stored) == 0 {
+		return Prepared{}, ErrCorrupt
+	}
+	width, height := displaySize(cfg.Width, cfg.Height, jpegOrientation(stored))
+	return seal("image", "image/jpeg", stored, width, height, 0), nil
 }
 
 func inspectVoice(data []byte, contentType string, declared int, limits Limits, parse func([]byte) (int, error)) (Prepared, error) {
@@ -228,10 +254,6 @@ func durationWebM(data []byte) (int, error) {
 		return 0, nil
 	}
 	return ms, nil
-}
-
-func keepGIF(data []byte) ([]byte, error) {
-	return data, nil
 }
 
 func leadingMarkup(data []byte) bool {

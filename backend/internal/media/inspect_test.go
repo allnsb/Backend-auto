@@ -66,6 +66,19 @@ func TestInspectImagesStripsMetadataAndRejectsMarkup(t *testing.T) {
 	if _, err := Inspect(jpg, 1500, limits); err != ErrDuration {
 		t.Fatalf("image duration err=%v", err)
 	}
+
+	wide := mustWideJPEG(t)
+	rotated := injectOrientation(wide, 6, "GPSLatitude-secret")
+	got, err = Inspect(rotated, 0, limits)
+	if err != nil || got.Width != 2 || got.Height != 4 || jpegOrientation(got.Bytes) != 6 || bytes.Contains(got.Bytes, []byte("GPSLatitude-secret")) {
+		t.Fatalf("oriented jpeg %dx%d tag=%d err=%v", got.Width, got.Height, jpegOrientation(got.Bytes), err)
+	}
+
+	commented := withGIFComment(gifBytes, "GPSLatitude-secret")
+	got, err = Inspect(commented, 0, limits)
+	if err != nil || bytes.Contains(got.Bytes, []byte("GPSLatitude-secret")) || got.ContentType != "image/gif" {
+		t.Fatalf("gif comment survived err=%v", err)
+	}
 }
 
 func TestInspectRejectsOversizedImagesAndLongEdges(t *testing.T) {
@@ -132,6 +145,78 @@ func TestInspectVoiceDuration(t *testing.T) {
 	if _, err := Inspect(short, 300_000, limits); err != ErrDuration {
 		t.Fatalf("tiny file claiming five minutes err=%v", err)
 	}
+
+	tagged := append(buildWebM(1500, 2, "A_OPUS"), webmLocationTag()...)
+	got, err = Inspect(tagged, 1500, limits)
+	if err != nil || got.DurationMS != 1500 || bytes.Contains(got.Bytes, []byte("+37.0+122.0")) {
+		t.Fatalf("webm tags duration=%d err=%v", got.DurationMS, err)
+	}
+
+	located := append(buildMP4(1500, "soun"), mp4Box("udta", mp4Box("\xa9xyz", []byte("+37.7749-122.4194/")))...)
+	got, err = Inspect(located, 1500, limits)
+	if err != nil || got.DurationMS != 1500 || bytes.Contains(got.Bytes, []byte("+37.7749-122.4194/")) {
+		t.Fatalf("mp4 location duration=%d err=%v", got.DurationMS, err)
+	}
+
+	fragment := buildFragmentedMP4(1500)
+	got, err = Inspect(fragment, 1500, limits)
+	if err != nil || got.ContentType != "audio/mp4" || got.DurationMS != 1500 {
+		t.Fatalf("fragmented mp4 duration=%d err=%v", got.DurationMS, err)
+	}
+	if _, err := Inspect(buildFragmentedMP4(400_000), 400_000, limits); err != ErrDuration {
+		t.Fatalf("long fragmented mp4 err=%v", err)
+	}
+	unspecified := buildMP4(0, "soun")
+	got, err = Inspect(unspecified, 1500, limits)
+	if err != nil || got.DurationMS != 1500 {
+		t.Fatalf("mvhd zero duration=%d err=%v", got.DurationMS, err)
+	}
+}
+
+func mustWideJPEG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 4, 2)), nil); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func injectOrientation(data []byte, orientation byte, secret string) []byte {
+	payload := append(minimalOrientationSegment(orientation)[4:], secret...)
+	segment := make([]byte, 4+len(payload))
+	segment[0], segment[1] = 0xFF, 0xE1
+	binary.BigEndian.PutUint16(segment[2:4], uint16(2+len(payload)))
+	copy(segment[4:], payload)
+	out := append([]byte{}, data[:2]...)
+	out = append(out, segment...)
+	return append(out, data[2:]...)
+}
+
+func withGIFComment(data []byte, text string) []byte {
+	block := []byte{0x21, 0xFE, byte(len(text))}
+	block = append(block, text...)
+	block = append(block, 0)
+	end := bytes.LastIndexByte(data, 0x3B)
+	out := append([]byte{}, data[:end]...)
+	out = append(out, block...)
+	return append(out, 0x3B)
+}
+
+func webmLocationTag() []byte {
+	name := ebmlElement([]byte{0x45, 0xA3}, []byte("GPS_POSITION"))
+	value := ebmlElement([]byte{0x44, 0x87}, []byte("+37.0+122.0"))
+	simple := ebmlElement([]byte{0x67, 0xC8}, append(name, value...))
+	return ebmlElement([]byte{0x12, 0x54, 0xC3, 0x67}, simple)
+}
+
+func buildFragmentedMP4(sampleMS int) []byte {
+	base := buildMP4(0, "soun")
+	trun := make([]byte, 12)
+	binary.BigEndian.PutUint32(trun[0:4], 0x000100)
+	binary.BigEndian.PutUint32(trun[4:8], 1)
+	binary.BigEndian.PutUint32(trun[8:12], uint32(sampleMS))
+	return append(base, mp4Box("moof", mp4Box("traf", mp4Box("trun", trun)))...)
 }
 
 func mustJPEG(t *testing.T) []byte {

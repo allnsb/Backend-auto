@@ -13,6 +13,41 @@ import (
 	"odysseia.local/backend/internal/media"
 )
 
+func TestUploadExtendsTheReadDeadline(t *testing.T) {
+	actor := identity.User{ID: "dc9de165-b912-4dcb-8620-8dfdb30176b7", CreatedAt: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}
+	api := NewAPI(func(context.Context, string) (identity.Authentication, error) {
+		return identity.Authentication{ExternalID: identity.ExternalID{Issuer: "https://issuer.example", Subject: "verified-subject"}, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	}, func(context.Context, identity.ExternalID) (identity.User, error) {
+		return actor, nil
+	})
+	api.RegisterConversations(&conversationFake{id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", hidden: true})
+	body := multipartBody(t, "file", "image.svg", []byte("<svg/>"), "")
+	writer := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	request := httptest.NewRequest(http.MethodPost, "/v1/conversations/7c9e6679-7425-40de-944b-e07fc1f90ae7/attachments", bytes.NewReader(body.body))
+	request.Header.Set("Authorization", "Bearer valid-access-token")
+	request.Header.Set("Content-Type", body.contentType)
+	api.ServeHTTP(writer, request)
+	if writer.readAt.Before(time.Now().Add(90*time.Second)) || writer.writeAt.Before(time.Now().Add(90*time.Second)) {
+		t.Fatalf("upload deadlines read=%s write=%s", writer.readAt, writer.writeAt)
+	}
+}
+
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+	readAt  time.Time
+	writeAt time.Time
+}
+
+func (w *deadlineWriter) SetReadDeadline(deadline time.Time) error {
+	w.readAt = deadline
+	return nil
+}
+
+func (w *deadlineWriter) SetWriteDeadline(deadline time.Time) error {
+	w.writeAt = deadline
+	return nil
+}
+
 func TestAttachmentUploadRejectsTypeAndSizeAndHiddenDownload(t *testing.T) {
 	actor := identity.User{ID: "dc9de165-b912-4dcb-8620-8dfdb30176b7", CreatedAt: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}
 	store := &conversationFake{id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", hidden: true}
