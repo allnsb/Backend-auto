@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // Configuration errors must fail startup instead of silently disabling the
@@ -54,6 +55,38 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 				t.Fatalf("attachment defaults = %+v", cfg)
 			}
 		})
+	}
+}
+
+func TestAttachmentRetentionAndObjectStore(t *testing.T) {
+	got, err := AttachmentRetention()
+	if err != nil || got != DefaultAttachmentRetention {
+		t.Fatalf("default retention = %s err=%v", got, err)
+	}
+	t.Setenv("ODYSSEIA_ATTACHMENT_RETENTION", "168h")
+	got, err = AttachmentRetention()
+	if err != nil || got != 168*time.Hour {
+		t.Fatalf("explicit retention = %s err=%v", got, err)
+	}
+	t.Setenv("ODYSSEIA_ATTACHMENT_RETENTION", "1h")
+	got, err = AttachmentRetention()
+	if err != nil || got != time.Hour {
+		t.Fatalf("minimum retention = %s err=%v", got, err)
+	}
+	for _, raw := range []string{"30m", "7d", "8785h", "super-secret-value"} {
+		t.Setenv("ODYSSEIA_ATTACHMENT_RETENTION", raw)
+		_, err = AttachmentRetention()
+		if err == nil || !strings.Contains(err.Error(), "ODYSSEIA_ATTACHMENT_RETENTION") || strings.Contains(err.Error(), raw) {
+			t.Fatalf("retention %q error = %v", raw, err)
+		}
+	}
+	t.Setenv("ODYSSEIA_R2_ACCOUNT_ID", "abc123")
+	t.Setenv("ODYSSEIA_R2_ACCESS_KEY_ID", "test-access-key")
+	t.Setenv("ODYSSEIA_R2_SECRET_ACCESS_KEY", "test-secret-key")
+	t.Setenv("ODYSSEIA_R2_BUCKET", "odysseia-attachments")
+	store, err := LoadObjectStore()
+	if err != nil || store.Region != "auto" || store.Bucket != "odysseia-attachments" {
+		t.Fatalf("object store %+v err=%v", store, err)
 	}
 }
 

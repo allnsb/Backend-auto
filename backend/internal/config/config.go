@@ -96,34 +96,79 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-func loadAttachmentConfig(cfg *Config) error {
-	cfg.R2AccountID = os.Getenv("ODYSSEIA_R2_ACCOUNT_ID")
-	cfg.R2AccessKeyID = os.Getenv("ODYSSEIA_R2_ACCESS_KEY_ID")
-	cfg.R2SecretAccessKey = os.Getenv("ODYSSEIA_R2_SECRET_ACCESS_KEY")
-	cfg.R2Bucket = os.Getenv("ODYSSEIA_R2_BUCKET")
-	cfg.R2Endpoint = os.Getenv("ODYSSEIA_R2_ENDPOINT")
-	cfg.R2Region = os.Getenv("ODYSSEIA_R2_REGION")
-	if cfg.R2Region == "" {
-		cfg.R2Region = "auto"
+// ObjectStore is the R2 (or other S3-compatible) target. The API and the
+// attachment sweep both read it; the sweep does not load the HTTPS listener.
+type ObjectStore struct {
+	AccountID       string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	Endpoint        string
+	Region          string
+}
+
+func LoadObjectStore() (ObjectStore, error) {
+	cfg := ObjectStore{
+		AccountID:       os.Getenv("ODYSSEIA_R2_ACCOUNT_ID"),
+		AccessKeyID:     os.Getenv("ODYSSEIA_R2_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("ODYSSEIA_R2_SECRET_ACCESS_KEY"),
+		Bucket:          os.Getenv("ODYSSEIA_R2_BUCKET"),
+		Endpoint:        os.Getenv("ODYSSEIA_R2_ENDPOINT"),
+		Region:          os.Getenv("ODYSSEIA_R2_REGION"),
 	}
-	if !asciiToken(cfg.R2AccountID, 1, 64) || strings.ContainsAny(cfg.R2AccountID, ".-") {
-		return errors.New("ODYSSEIA_R2_ACCOUNT_ID must be 1 to 64 letters or digits")
+	if cfg.Region == "" {
+		cfg.Region = "auto"
 	}
-	if !asciiToken(cfg.R2AccessKeyID, 1, 128) || strings.ContainsAny(cfg.R2SecretAccessKey, "\r\n") || cfg.R2SecretAccessKey == "" || len(cfg.R2SecretAccessKey) > 256 {
-		return errors.New("ODYSSEIA_R2_ACCESS_KEY_ID and ODYSSEIA_R2_SECRET_ACCESS_KEY are required")
+	if !asciiToken(cfg.AccountID, 1, 64) || strings.ContainsAny(cfg.AccountID, ".-") {
+		return ObjectStore{}, errors.New("ODYSSEIA_R2_ACCOUNT_ID must be 1 to 64 letters or digits")
 	}
-	if !bucketName(cfg.R2Bucket) {
-		return errors.New("ODYSSEIA_R2_BUCKET must be a lowercase DNS label of 3 to 63 characters")
+	if !asciiToken(cfg.AccessKeyID, 1, 128) || strings.ContainsAny(cfg.SecretAccessKey, "\r\n") || cfg.SecretAccessKey == "" || len(cfg.SecretAccessKey) > 256 {
+		return ObjectStore{}, errors.New("ODYSSEIA_R2_ACCESS_KEY_ID and ODYSSEIA_R2_SECRET_ACCESS_KEY are required")
 	}
-	if !asciiToken(cfg.R2Region, 1, 32) {
-		return errors.New("ODYSSEIA_R2_REGION must be 1 to 32 letters, digits, or hyphens")
+	if !bucketName(cfg.Bucket) {
+		return ObjectStore{}, errors.New("ODYSSEIA_R2_BUCKET must be a lowercase DNS label of 3 to 63 characters")
 	}
-	if cfg.R2Endpoint != "" {
-		parsed, err := url.Parse(cfg.R2Endpoint)
+	if !asciiToken(cfg.Region, 1, 32) {
+		return ObjectStore{}, errors.New("ODYSSEIA_R2_REGION must be 1 to 32 letters, digits, or hyphens")
+	}
+	if cfg.Endpoint != "" {
+		parsed, err := url.Parse(cfg.Endpoint)
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return errors.New("ODYSSEIA_R2_ENDPOINT must be an https origin without user info, query, or fragment")
+			return ObjectStore{}, errors.New("ODYSSEIA_R2_ENDPOINT must be an https origin without user info, query, or fragment")
 		}
 	}
+	return cfg, nil
+}
+
+// DefaultAttachmentRetention is about 7 days from attachments.created_at.
+// Go durations have no day unit; 168h is the unset value.
+const DefaultAttachmentRetention = 168 * time.Hour
+
+// AttachmentRetention reads ODYSSEIA_ATTACHMENT_RETENTION. The sweep command
+// uses it. The API process does not delete objects.
+func AttachmentRetention() (time.Duration, error) {
+	raw := os.Getenv("ODYSSEIA_ATTACHMENT_RETENTION")
+	if raw == "" {
+		return DefaultAttachmentRetention, nil
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed < time.Hour || parsed > 366*24*time.Hour {
+		return 0, errors.New("ODYSSEIA_ATTACHMENT_RETENTION must be a Go duration from 1h to 8784h; the default is 168h")
+	}
+	return parsed, nil
+}
+
+func loadAttachmentConfig(cfg *Config) error {
+	store, err := LoadObjectStore()
+	if err != nil {
+		return err
+	}
+	cfg.R2AccountID = store.AccountID
+	cfg.R2AccessKeyID = store.AccessKeyID
+	cfg.R2SecretAccessKey = store.SecretAccessKey
+	cfg.R2Bucket = store.Bucket
+	cfg.R2Endpoint = store.Endpoint
+	cfg.R2Region = store.Region
 	cfg.AttachmentMaxBytes = 10 << 20
 	cfg.AttachmentMaxEdge = 8192
 	cfg.AttachmentMaxPixels = 16_777_216
@@ -132,7 +177,6 @@ func loadAttachmentConfig(cfg *Config) error {
 	cfg.AttachmentQuotaBytes = 100 << 20
 	cfg.AttachmentPresignTTL = time.Minute
 	cfg.AttachmentMaxPerMessage = 4
-	var err error
 	if cfg.AttachmentMaxBytes, err = optionalInt64("ODYSSEIA_ATTACHMENT_MAX_BYTES", cfg.AttachmentMaxBytes, 1, 10<<20); err != nil {
 		return err
 	}

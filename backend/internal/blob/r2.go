@@ -99,6 +99,9 @@ func (r *R2) PresignGet(ctx context.Context, get Get) (string, error) {
 	return signed.URL, nil
 }
 
+// Delete uses DeleteObject. A missing key is success on S3 and on R2, which
+// implements that call. DeleteObjects is a checksum-required SDK operation and
+// currently sends CRC32; R2 returns that header as not implemented.
 func (r *R2) Delete(ctx context.Context, key string) error {
 	if key == "" {
 		return errors.New("R2 delete requires a key")

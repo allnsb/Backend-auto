@@ -2,8 +2,8 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.8.0",
-    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. Connection JWTs grant identity only. Author and platform overrides, works, custom emoji, read receipts and production capacity remain separate stages."
+    "version": "0.8.1",
+    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Connection JWTs grant identity only. Author and platform overrides, works, custom emoji, read receipts and production capacity remain separate stages."
   },
   "servers": [
     {
@@ -1990,7 +1990,7 @@
     "/v1/conversations/{conversation_id}/attachments/{attachment_id}": {
       "get": {
         "operationId": "openConversationAttachment",
-        "description": "Active members receive a 302 to a short-lived presigned GET. The URL is a bearer token for one object. A non-member, a removed member, or an unknown id is 404. Another member can open an attachment only after it is bound to a message; the uploader can open their own ready object before sending. This redirect sets nosniff. The object response carries the allowlisted Content-Type stored with the object; object storage cannot add X-Content-Type-Options.",
+        "description": "Active members receive a 302 to a short-lived presigned GET. The URL is a bearer token for one object. An expired attachment, a non-member, a removed member, or an unknown id is 404. History still lists an expired attachment with expired set so the client can show that it existed; this route does not issue a URL for it. Another member can open an attachment only after it is bound to a message; the uploader can open their own ready object before sending. This redirect sets nosniff. The object response carries the allowlisted Content-Type stored with the object; object storage cannot add X-Content-Type-Options.",
         "security": [
           {
             "accessToken": []
@@ -2928,6 +2928,10 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "expired": {
+            "type": "boolean",
+            "description": "True after the sweep removed the object and kept the message link. Omitted while the object is still available. Download is then 404."
           }
         }
       },

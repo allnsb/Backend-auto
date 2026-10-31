@@ -50,4 +50,7 @@ func TestMemoryStoreRoundTrip(t *testing.T) {
 	if err := store.Delete(context.Background(), object.Key); err != nil || store.Len() != 0 || store.Deletes != 1 {
 		t.Fatalf("delete len=%d deletes=%d err=%v", store.Len(), store.Deletes, err)
 	}
+	if err := store.Delete(context.Background(), object.Key); err != nil || store.Deletes != 2 {
+		t.Fatalf("missing delete deletes=%d err=%v", store.Deletes, err)
+	}
 }
