@@ -83,8 +83,15 @@ func testP3MigrationRoundTrip(t *testing.T, ctx context.Context, owner *pgxpool.
 	if err != nil {
 		t.Fatal(err)
 	}
-	directions := strings.Split(string(source), "-- +goose Down")
-	for _, direction := range []string{directions[1], directions[0]} {
+	later, err := migrations.ReadFile("migrations/00010_conversations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 00010 owns the conversation foreign key on the stream kind, so it has to
+	// leave before 00008 can drop that key and return afterward.
+	p3 := strings.Split(string(source), "-- +goose Down")
+	p4 := strings.Split(string(later), "-- +goose Down")
+	for _, direction := range []string{p4[1], p3[1], p3[0], p4[0]} {
 		if _, err := tx.Exec(ctx, direction); err != nil {
 			t.Fatal(err)
 		}

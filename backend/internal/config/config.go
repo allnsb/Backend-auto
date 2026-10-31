@@ -20,6 +20,7 @@ type Config struct {
 	RealtimeConnectionSecret string
 	RealtimeProxySecret      string
 	MaxWriteTransactions     int64
+	ConversationMemberLimit  int
 }
 
 func Load() (Config, error) {
@@ -62,6 +63,14 @@ func Load() (Config, error) {
 			return Config{}, errors.New("ODYSSEIA_MAX_WRITE_TRANSACTIONS must be a nonnegative integer; zero selects the automatic budget")
 		}
 		cfg.MaxWriteTransactions = limit
+	}
+	cfg.ConversationMemberLimit = 50
+	if raw := os.Getenv("ODYSSEIA_CONVERSATION_MEMBER_LIMIT"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 50 {
+			return Config{}, errors.New("ODYSSEIA_CONVERSATION_MEMBER_LIMIT must be an integer from 1 to 50")
+		}
+		cfg.ConversationMemberLimit = limit
 	}
 	return cfg, nil
 }

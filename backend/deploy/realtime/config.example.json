@@ -63,6 +63,15 @@
         "force_recovery": true,
         "force_positioning": true,
         "subscribe_proxy_enabled": true
+      },
+      {
+        "name": "inbox",
+        "history_size": 64,
+        "history_ttl": "60s",
+        "force_recovery": true,
+        "force_positioning": true,
+        "allow_user_limited_channels": true,
+        "allow_history_for_subscriber": true
       }
     ]
   },
