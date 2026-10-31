@@ -158,7 +158,7 @@ func (s *Forums) SendChannelMessage(ctx context.Context, actor, channelID, reque
 		if err := reply.ValidateReferences(state.references); err != nil {
 			return err
 		}
-		entry, err := s.appendStreamReply(ctx, tx, channelID, actor, reply, requestID, digest[:], channelMessageStream, state)
+		entry, err := s.appendStreamReply(ctx, tx, channelID, actor, reply, requestID, digest[:], channelMessageStream, state, channel.ForumID)
 		result = entry.Message
 		return err
 	})

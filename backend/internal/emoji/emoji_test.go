@@ -10,6 +10,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"testing"
 
 	"odysseia.local/backend/internal/media"
@@ -70,21 +71,28 @@ func TestTokensResolveAndDegrade(t *testing.T) {
 	if err != nil || len(tokens) != 3 || !tokens[1].Animated || tokens[0].Name != "wave" {
 		t.Fatalf("tokens=%+v err=%v", tokens, err)
 	}
+	home := "11111111-1111-4111-8111-111111111111"
 	live := map[string]Ref{
 		id:    {ID: id, Name: "wave", Scope: "site", ContentType: "image/png", URL: "https://emoji.invalid/wave"},
-		other: {ID: other, Name: "spin", Animated: true, Scope: "forum", ForumID: "11111111-1111-4111-8111-111111111111"},
+		other: {ID: other, Name: "spin", Animated: true, Scope: "forum", ForumID: home},
 	}
-	if _, err := Resolve(tokens, live, map[string]struct{}{}); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("outsider forum emoji err=%v", err)
+	if _, err := Resolve(tokens, live, ""); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("forum emoji in a conversation err=%v", err)
 	}
-	member := map[string]struct{}{live[other].ForumID: {}}
-	refs, err := Resolve(tokens, live, member)
+	if _, err := Resolve(tokens, live, "22222222-2222-4222-8222-222222222222"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("cross-forum emoji err=%v", err)
+	}
+	refs, err := Resolve(tokens, live, home)
 	if err != nil || len(refs) != 2 || refs[0].ID != id || refs[1].ID != other {
 		t.Fatalf("refs=%+v err=%v", refs, err)
 	}
+	siteOnly := "hi <:wave:" + id + ">"
+	if _, err := Resolve(mustTokens(t, siteOnly), live, ""); err != nil {
+		t.Fatalf("site emoji in a conversation err=%v", err)
+	}
 	static := tokens
 	static[1].Animated = false
-	if _, err := Resolve(static, live, member); !errors.Is(err, ErrUnavailable) {
+	if _, err := Resolve(static, live, home); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("flag mismatch err=%v", err)
 	}
 	delete(live, id)
@@ -97,6 +105,19 @@ func TestTokensResolveAndDegrade(t *testing.T) {
 	if got, refs := Project(plain, live); got != plain || refs != nil {
 		t.Fatalf("plain changed %q %+v", got, refs)
 	}
+	over := strings.Repeat("<:aa:"+id+"> ", MaxPerMessage+1)
+	if got, refs := Project(over, live); got != over || refs != nil {
+		t.Fatalf("over-cap body was projected: %q %+v", got, refs)
+	}
+}
+
+func mustTokens(t *testing.T, body string) []Token {
+	t.Helper()
+	tokens, err := Parse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tokens
 }
 
 func mustJPEG(t *testing.T) []byte {

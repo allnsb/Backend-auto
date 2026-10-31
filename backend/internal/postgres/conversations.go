@@ -879,7 +879,7 @@ func (s *Forums) appendConversationMessage(ctx context.Context, tx pgx.Tx, actor
 		ID: uuid.NewString(), StreamID: id, Sequence: state.last + 1, AuthorID: actor,
 		Body: draft.Body, QuoteID: draft.QuoteID, Attachments: attached, CreatedAt: state.at,
 	}
-	refs, err := s.bindEmoji(ctx, tx, actor, draft.Body)
+	refs, err := s.bindEmoji(ctx, tx, draft.Body, "")
 	if err != nil {
 		return message.Message{}, err
 	}

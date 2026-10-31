@@ -54,11 +54,12 @@ func IDs(tokens []Token) []string {
 	return ids
 }
 
-// Resolve checks every token against live emoji the author may use.
-// memberForums contains forum ids the author currently belongs to.
-// A site emoji needs no forum. A missing, deleted, renamed, wrong-flag, or
-// out-of-forum emoji is not usable.
-func Resolve(tokens []Token, live map[string]Ref, memberForums map[string]struct{}) ([]Ref, error) {
+// Resolve checks every token against live emoji allowed in this place.
+// placeForum is the forum of the topic or channel being written. An empty
+// placeForum is a conversation, which accepts site emoji only. A forum emoji
+// is usable only when its forum_id is placeForum. Belonging to another forum
+// does not carry that emoji across, and conversations do not accept it.
+func Resolve(tokens []Token, live map[string]Ref, placeForum string) ([]Ref, error) {
 	refs := make([]Ref, 0, len(tokens))
 	seen := make(map[string]struct{}, len(tokens))
 	for _, token := range tokens {
@@ -66,11 +67,13 @@ func Resolve(tokens []Token, live map[string]Ref, memberForums map[string]struct
 		if !ok || item.Name != token.Name || item.Animated != token.Animated {
 			return nil, ErrUnavailable
 		}
-		if item.Scope == "forum" {
-			if _, member := memberForums[item.ForumID]; !member {
+		switch item.Scope {
+		case "site":
+		case "forum":
+			if placeForum == "" || item.ForumID != placeForum {
 				return nil, ErrUnavailable
 			}
-		} else if item.Scope != "site" {
+		default:
 			return nil, ErrUnavailable
 		}
 		if _, ok := seen[item.ID]; ok {

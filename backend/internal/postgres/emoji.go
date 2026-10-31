@@ -91,10 +91,10 @@ func (s *Forums) GetEmoji(ctx context.Context, actor, id string) (emoji.Emoji, e
 }
 
 func (s *Forums) DeleteSiteEmoji(ctx context.Context, actor, id string) error {
-	if !s.emojiOwner(actor) || !canonicalEmojiID(id) {
-		if !canonicalEmojiID(id) {
-			return emoji.ErrInvalid
-		}
+	if !canonicalEmojiID(id) {
+		return emoji.ErrInvalid
+	}
+	if !s.emojiOwner(actor) {
 		return emoji.ErrForbidden
 	}
 	return s.deleteEmoji(ctx, id, "site", "")
@@ -362,9 +362,12 @@ func canonicalEmojiID(value string) bool {
 	return err == nil && parsed != uuid.Nil && parsed.String() == value
 }
 
-// bindEmoji checks tokens inside the message transaction. The returned refs
-// are attached to the outbox payload. The stored body keeps the tokens.
-func (s *Forums) bindEmoji(ctx context.Context, tx pgx.Tx, actor, body string) ([]message.CustomEmoji, error) {
+// bindEmoji checks tokens inside the message transaction. placeForum is the
+// forum of a topic or channel. An empty placeForum is a conversation, which
+// accepts site emoji only. The returned refs go on the outbox payload. The
+// stored body keeps the tokens. Write paths still reject more than
+// MaxPerMessage tokens; reads do not.
+func (s *Forums) bindEmoji(ctx context.Context, tx pgx.Tx, body, placeForum string) ([]message.CustomEmoji, error) {
 	tokens, err := emoji.Parse(body)
 	if err != nil || len(tokens) == 0 {
 		return nil, err
@@ -376,25 +379,7 @@ func (s *Forums) bindEmoji(ctx context.Context, tx pgx.Tx, actor, body string) (
 	if err != nil {
 		return nil, err
 	}
-	forums := map[string]struct{}{}
-	var forumIDs []string
-	for _, item := range live {
-		if item.Scope == "forum" {
-			forumIDs = append(forumIDs, item.ForumID)
-		}
-	}
-	if len(forumIDs) != 0 {
-		rows, err := tx.Query(ctx, `SELECT forum_id::text FROM odysseia.forum_members
-			WHERE user_id = $1 AND forum_id = ANY($2::uuid[])`, actor, forumIDs)
-		if err != nil {
-			return nil, err
-		}
-		forums, err = readForumSet(rows)
-		if err != nil {
-			return nil, err
-		}
-	}
-	refs, err := emoji.Resolve(tokens, live, forums)
+	refs, err := emoji.Resolve(tokens, live, placeForum)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +394,9 @@ func (s *Forums) projectMessages(ctx context.Context, items []*message.Message) 
 	for _, item := range items {
 		tokens, err := emoji.Parse(item.Body)
 		if err != nil {
-			return err
+			// A body Parse rejects, including one stored before the 50-token cap,
+			// stays as written. That row must not fail the rest of the page.
+			continue
 		}
 		for _, token := range tokens {
 			if _, ok := seen[token.ID]; ok {
@@ -468,19 +455,6 @@ func (s *Forums) liveEmoji(ctx context.Context, q rowQueryer, ids []string) (map
 		live[item.ID] = item.Ref()
 	}
 	return live, rows.Err()
-}
-
-func readForumSet(rows pgx.Rows) (map[string]struct{}, error) {
-	defer rows.Close()
-	set := map[string]struct{}{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		set[id] = struct{}{}
-	}
-	return set, rows.Err()
 }
 
 func customEmoji(refs []emoji.Ref) []message.CustomEmoji {

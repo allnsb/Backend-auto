@@ -217,7 +217,7 @@ func (s *Forums) CreateTopic(ctx context.Context, actor, forumID, requestID stri
 		if err != nil {
 			return err
 		}
-		refs, err := s.bindEmoji(ctx, tx, actor, draft.Body)
+		refs, err := s.bindEmoji(ctx, tx, draft.Body, forumID)
 		if err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func (s *Forums) Reply(ctx context.Context, actor, topicID, requestID string, dr
 		if err := draft.ValidateReferences(state.references); err != nil {
 			return err
 		}
-		result, err = s.appendReply(ctx, tx, topicID, actor, draft, requestID, digest[:], state)
+		result, err = s.appendReply(ctx, tx, topicID, actor, draft, requestID, digest[:], state, topic.ForumID)
 		return err
 	})
 	if err != nil {
@@ -424,12 +424,12 @@ func insertEntry(ctx context.Context, tx pgx.Tx, topicID, actor string, position
 
 // appendReply requires the current locked counter, DB transaction time and
 // validated references. Body, relation and event then travel in one write batch.
-func (s *Forums) appendReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, state lockedReply) (forum.Entry, error) {
-	return s.appendStreamReply(ctx, tx, topicID, actor, draft, requestID, digest, topicMessageStream, state)
+func (s *Forums) appendReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, state lockedReply, placeForum string) (forum.Entry, error) {
+	return s.appendStreamReply(ctx, tx, topicID, actor, draft, requestID, digest, topicMessageStream, state, placeForum)
 }
 
-func (s *Forums) appendStreamReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, stream messageStream, state lockedReply) (forum.Entry, error) {
-	refs, err := s.bindEmoji(ctx, tx, actor, draft.Body)
+func (s *Forums) appendStreamReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, stream messageStream, state lockedReply, placeForum string) (forum.Entry, error) {
+	refs, err := s.bindEmoji(ctx, tx, draft.Body, placeForum)
 	if err != nil {
 		return forum.Entry{}, err
 	}

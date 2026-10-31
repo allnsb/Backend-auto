@@ -5,17 +5,20 @@ package postgres
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"image"
 	"image/color"
 	"image/gif"
 	"image/png"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"odysseia.local/backend/internal/blob"
+	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/emoji"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/identity"
@@ -29,9 +32,15 @@ func testEmoji(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	}
 	defer ownerPool.Close()
 	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
-		GRANT SELECT ON odysseia.forums, odysseia.forum_members, odysseia.message_streams,
-			odysseia.topics, odysseia.messages, odysseia.forum_entries, odysseia.identity_groups, odysseia.emojis TO odysseia_runtime;
-		GRANT INSERT ON odysseia.message_streams, odysseia.topics, odysseia.messages, odysseia.forum_entries, odysseia.emojis TO odysseia_runtime;
+		GRANT SELECT ON odysseia.users, odysseia.forums, odysseia.forum_members, odysseia.message_streams,
+			odysseia.topics, odysseia.messages, odysseia.forum_entries, odysseia.channels,
+			odysseia.identity_groups, odysseia.emojis TO odysseia_runtime;
+		GRANT SELECT, INSERT ON odysseia.conversations, odysseia.conversation_members TO odysseia_runtime;
+		GRANT INSERT ON odysseia.message_streams, odysseia.topics, odysseia.messages, odysseia.forum_entries,
+			odysseia.channels, odysseia.emojis TO odysseia_runtime;
+		GRANT UPDATE (owner_id, dissolved_at, dm_low, dm_high) ON odysseia.conversations TO odysseia_runtime;
+		GRANT UPDATE (role, joined_position, last_read_position, joined_at, removed_at)
+			ON odysseia.conversation_members TO odysseia_runtime;
 		GRANT UPDATE (deleted_at) ON odysseia.emojis TO odysseia_runtime;
 		GRANT INSERT (method, payload) ON odysseia.realtime_outbox TO odysseia_runtime;
 		GRANT USAGE ON SEQUENCE odysseia.realtime_outbox_id_seq TO odysseia_runtime;
@@ -72,6 +81,9 @@ func testEmoji(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	if _, err := ownerPool.Exec(ctx, `UPDATE odysseia.forum_members SET role_id=$1 WHERE forum_id=$2 AND user_id=$3`, identity.ModeratorGroupID, other.ID, outsider.ID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := ownerPool.Exec(ctx, `INSERT INTO odysseia.forum_members(forum_id, user_id) VALUES ($1, $2)`, other.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
 	store := newCachedForumFixture(t, runtimePool)
 	files, err := blob.NewMemoryPublic("https://emoji.invalid/custom")
 	if err != nil {
@@ -98,6 +110,10 @@ func testEmoji(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	if err != nil {
 		t.Fatal(err)
 	}
+	site, err := store.CreateSiteEmoji(ctx, ownerUser.ID, uuid.NewString(), "glob", mustEmojiImage(t, pngBytes))
+	if err != nil || site.Scope != "site" {
+		t.Fatalf("site=%+v err=%v", site, err)
+	}
 	gifBytes := mustIntegrationGIF(t)
 	spin, err := store.CreateForumEmoji(ctx, moderator.ID, board.ID, uuid.NewString(), "spin", mustEmojiImage(t, gifBytes))
 	if err != nil || !spin.Animated {
@@ -107,15 +123,50 @@ func testEmoji(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacyID, legacyBody := insertLegacyEmojiBody(t, ctx, ownerPool, topic.Topic.ID, member.ID)
+	legacyPage, err := store.ListMessages(ctx, member.ID, topic.Topic.ID, 0, 20)
+	if err != nil {
+		t.Fatalf("over-cap history: %v", err)
+	}
+	if !pageKeepsBody(legacyPage, legacyID, legacyBody) || len(legacyPage) < 2 {
+		t.Fatalf("legacy page=%+v", legacyPage)
+	}
+	over := strings.Repeat("<:aa:6d2f0c2e-1b7a-4e4e-9c1a-2f6b0d9a7c31> ", emoji.MaxPerMessage+1)
+	if _, err := store.Reply(ctx, member.ID, topic.Topic.ID, uuid.NewString(), forum.ReplyDraft{Body: over}); !errors.Is(err, emoji.ErrInvalid) {
+		t.Fatalf("write of an over-cap body err=%v", err)
+	}
 	if _, err := store.Reply(ctx, member.ID, topic.Topic.ID, uuid.NewString(), forum.ReplyDraft{Body: "<:spin:" + spin.ID + ">"}); !errors.Is(err, emoji.ErrUnavailable) {
 		t.Fatalf("static token for animated emoji err=%v", err)
 	}
 	if _, err := store.Reply(ctx, member.ID, topic.Topic.ID, uuid.NewString(), forum.ReplyDraft{Body: "<:foreign:" + foreign.ID + ">"}); !errors.Is(err, emoji.ErrUnavailable) {
-		t.Fatalf("foreign forum emoji err=%v", err)
+		t.Fatalf("cross-forum emoji err=%v", err)
 	}
 	sent, err := store.Reply(ctx, member.ID, topic.Topic.ID, uuid.NewString(), forum.ReplyDraft{Body: "hello <:wave:" + wave.ID + ">"})
 	if err != nil || len(sent.Emojis) != 1 || sent.Emojis[0].ID != wave.ID || sent.Emojis[0].URL != wave.URL {
 		t.Fatalf("sent=%+v err=%v", sent, err)
+	}
+	if _, err := store.Reply(ctx, member.ID, topic.Topic.ID, uuid.NewString(), forum.ReplyDraft{Body: "<:glob:" + site.ID + ">"}); err != nil {
+		t.Fatalf("site emoji in topic: %v", err)
+	}
+	channel, err := store.CreateChannel(ctx, member.ID, board.ID, uuid.NewString(), forum.ChannelDraft{Title: "表情频道"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SendChannelMessage(ctx, member.ID, channel.ID, uuid.NewString(), forum.ChannelMessageDraft{Body: "<:foreign:" + foreign.ID + ">"}); !errors.Is(err, emoji.ErrUnavailable) {
+		t.Fatalf("cross-forum channel emoji err=%v", err)
+	}
+	if _, err := store.SendChannelMessage(ctx, member.ID, channel.ID, uuid.NewString(), forum.ChannelMessageDraft{Body: "<:wave:" + wave.ID + "> <:glob:" + site.ID + ">"}); err != nil {
+		t.Fatalf("same-forum channel emoji: %v", err)
+	}
+	dm, _, err := store.OpenDM(ctx, member.ID, uuid.NewString(), conversation.DMDraft{UserID: moderator.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SendConversationMessage(ctx, member.ID, dm.ID, uuid.NewString(), conversation.MessageDraft{Body: "<:wave:" + wave.ID + ">"}); !errors.Is(err, emoji.ErrUnavailable) {
+		t.Fatalf("forum emoji in a conversation err=%v", err)
+	}
+	if _, err := store.SendConversationMessage(ctx, member.ID, dm.ID, uuid.NewString(), conversation.MessageDraft{Body: "<:glob:" + site.ID + ">"}); err != nil {
+		t.Fatalf("site emoji in a conversation: %v", err)
 	}
 	page, err := store.ListMessages(ctx, member.ID, topic.Topic.ID, 0, 20)
 	if err != nil {
@@ -150,6 +201,35 @@ func testEmoji(t *testing.T, ctx context.Context, migrationURL string, runtimePo
 	if stored != "hello <:wave:"+wave.ID+">" {
 		t.Fatalf("stored body changed: %s", stored)
 	}
+}
+
+func insertLegacyEmojiBody(t *testing.T, ctx context.Context, owner *pgxpool.Pool, streamID, author string) (string, string) {
+	t.Helper()
+	token := "6d2f0c2e-1b7a-4e4e-9c1a-2f6b0d9a7c31"
+	parts := make([]string, emoji.MaxPerMessage+1)
+	for i := range parts {
+		parts[i] = "<:aa:" + token + ">"
+	}
+	body := strings.Join(parts, " ")
+	id := uuid.NewString()
+	sum := sha256.Sum256([]byte(id))
+	if _, err := owner.Exec(ctx, `INSERT INTO odysseia.messages(id, stream_id, position, author_id, body, request_id, request_hash)
+		VALUES ($1, $2, 2, $3, $4, $5, $6)`, id, streamID, author, body, uuid.NewString(), sum[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `UPDATE odysseia.message_streams SET last_position = 2 WHERE id = $1`, streamID); err != nil {
+		t.Fatal(err)
+	}
+	return id, body
+}
+
+func pageKeepsBody(page []forum.Entry, id, body string) bool {
+	for _, item := range page {
+		if item.ID == id {
+			return item.Body == body && len(item.Emojis) == 0
+		}
+	}
+	return false
 }
 
 func mustEmojiImage(t *testing.T, data []byte) emoji.Image {
