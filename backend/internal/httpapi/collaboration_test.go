@@ -88,6 +88,12 @@ func TestCollaborationRoutesAndPermissionGate(t *testing.T) {
 	if removed.Code != http.StatusOK || !store.removed {
 		t.Fatalf("remove status=%d body=%s", removed.Code, removed.Body.String())
 	}
+	store.removeErr = forum.ErrLastManager
+	held := call(http.MethodDelete, "/v1/forums/"+forumID+"/members/"+other, "")
+	if held.Code != http.StatusConflict {
+		t.Fatalf("last manager status=%d body=%s", held.Code, held.Body.String())
+	}
+	assertProblem(t, doc, held, "last_manager")
 	groups := call(http.MethodGet, "/v1/identity/groups", "")
 	if groups.Code != http.StatusOK {
 		t.Fatal(groups.Body.String())
@@ -143,6 +149,7 @@ type collaborationFake struct {
 	roleID       string
 	removed      bool
 	assignedUser string
+	removeErr    error
 }
 
 func (f *collaborationFake) ListGroups(context.Context) ([]identity.Group, error) {
@@ -198,6 +205,9 @@ func (f *collaborationFake) SetMemberRole(_ context.Context, actorID, _, userID,
 }
 
 func (f *collaborationFake) RemoveMember(_ context.Context, actorID, _, _ string) (bool, error) {
+	if f.removeErr != nil {
+		return false, f.removeErr
+	}
 	if actorID != f.actor || !f.allow {
 		return false, forum.ErrForbidden
 	}

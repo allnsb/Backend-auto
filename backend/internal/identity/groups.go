@@ -40,6 +40,13 @@ func (g Group) Allows(grant string) bool {
 	return false
 }
 
+// Below reports whether subjectPriority is strictly under actorPriority.
+// Staff may assign or change only a lower role. An equal role is out of reach,
+// so a moderator cannot grant or edit the owner role, including their own.
+func Below(actorPriority, subjectPriority int) bool {
+	return subjectPriority < actorPriority
+}
+
 // Resolve keeps every grant from the single highest-priority role.
 // A lower role does not add or remove grants. Equal priorities keep the
 // lexicographically smaller group ID; the catalog also rejects duplicate priorities.

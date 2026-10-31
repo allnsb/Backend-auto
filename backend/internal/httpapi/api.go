@@ -127,6 +127,8 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 403, "permission_denied")
 	case errors.Is(err, forum.ErrExists):
 		writeProblem(w, 409, "member_exists")
+	case errors.Is(err, forum.ErrLastManager):
+		writeProblem(w, 409, "last_manager")
 	case errors.Is(err, forum.ErrConflict):
 		writeProblem(w, 409, "idempotency_conflict")
 	case errors.Is(err, forum.ErrReference):

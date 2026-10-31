@@ -2,6 +2,15 @@ package identity
 
 import "testing"
 
+func TestStaffCanReachOnlyALowerRole(t *testing.T) {
+	if !Below(200, 100) {
+		t.Fatal("moderator priority should reach the member role")
+	}
+	if Below(200, 200) || Below(200, 300) {
+		t.Fatal("equal and higher roles must stay out of reach")
+	}
+}
+
 func TestHighestPriorityRoleSuppliesTheOnlyGrants(t *testing.T) {
 	member := Group{ID: MemberGroupID, Name: "member", Priority: 100, Grants: GrantsFromFlags(true, true, false, false, false)}
 	moderator := Group{ID: ModeratorGroupID, Name: "moderator", Priority: 200, Grants: GrantsFromFlags(true, true, true, true, false)}

@@ -110,10 +110,21 @@ func (s *Collaboration) AddMember(ctx context.Context, actorID, forumID string, 
 	}
 	var member forum.Member
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers); err != nil {
+		if err := lockForum(ctx, tx, forumID); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id, role_id)
+		actor, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers)
+		if err != nil {
+			return err
+		}
+		role, err := groupByID(ctx, tx, change.RoleID)
+		if err != nil {
+			return err
+		}
+		if !identity.Below(actor.Priority, role.Priority) {
+			return forum.ErrForbidden
+		}
+		err = tx.QueryRow(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id, role_id)
 			SELECT $1, $2, g.id FROM odysseia.identity_groups g WHERE g.id=$3
 			ON CONFLICT DO NOTHING
 			RETURNING user_id::text, role_id::text`, forumID, change.UserID, change.RoleID).Scan(&member.UserID, &member.RoleID)
@@ -138,10 +149,31 @@ func (s *Collaboration) SetMemberRole(ctx context.Context, actorID, forumID, use
 	}
 	var member forum.Member
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers); err != nil {
+		if err := lockForum(ctx, tx, forumID); err != nil {
 			return err
 		}
-		err := tx.QueryRow(ctx, `UPDATE odysseia.forum_members m
+		actor, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers)
+		if err != nil {
+			return err
+		}
+		current, err := memberRole(ctx, tx, forumID, userID)
+		if err != nil {
+			return err
+		}
+		if !identity.Below(actor.Priority, current.Priority) {
+			return forum.ErrForbidden
+		}
+		next, err := groupByID(ctx, tx, roleID)
+		if err != nil {
+			return err
+		}
+		if !identity.Below(actor.Priority, next.Priority) {
+			return forum.ErrForbidden
+		}
+		if err := requireRemainingManager(ctx, tx, forumID, userID, next.ID, false); err != nil {
+			return err
+		}
+		err = tx.QueryRow(ctx, `UPDATE odysseia.forum_members m
 			SET role_id = g.id
 			FROM odysseia.identity_groups g
 			WHERE m.forum_id=$1 AND m.user_id=$2 AND g.id=$3
@@ -167,15 +199,22 @@ func (s *Collaboration) RemoveMember(ctx context.Context, actorID, forumID, user
 	}
 	var removed bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers); err != nil {
+		if err := lockForum(ctx, tx, forumID); err != nil {
 			return err
 		}
-		var forumExists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM odysseia.forums WHERE id=$1)`, forumID).Scan(&forumExists); err != nil {
+		actor, err := requireForumGrant(ctx, tx, forumID, actorID, identity.GrantManageMembers)
+		if err != nil {
 			return err
 		}
-		if !forumExists {
-			return forum.ErrNotFound
+		current, err := memberRole(ctx, tx, forumID, userID)
+		if err != nil {
+			return err
+		}
+		if !identity.Below(actor.Priority, current.Priority) {
+			return forum.ErrForbidden
+		}
+		if err := requireRemainingManager(ctx, tx, forumID, userID, identity.MemberGroupID, true); err != nil {
+			return err
 		}
 		tag, err := tx.Exec(ctx, `DELETE FROM odysseia.forum_members WHERE forum_id=$1 AND user_id=$2`, forumID, userID)
 		if err != nil {
@@ -294,6 +333,68 @@ func forumCandidates(ctx context.Context, tx pgx.Tx, forumID, userID string) (id
 	}
 	winner, _ := identity.Resolve(groups)
 	return winner, member, nil
+}
+
+func lockForum(ctx context.Context, tx pgx.Tx, forumID string) error {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id::text FROM odysseia.forums WHERE id=$1 FOR UPDATE`, forumID).Scan(&id)
+	return forumError(err)
+}
+
+func groupByID(ctx context.Context, tx pgx.Tx, groupID string) (identity.Group, error) {
+	group, err := scanGroup(tx.QueryRow(ctx, groupSelectSQL+` WHERE id=$1`, groupID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identity.Group{}, forum.ErrInvalid
+	}
+	return group, err
+}
+
+func memberRole(ctx context.Context, tx pgx.Tx, forumID, userID string) (identity.Group, error) {
+	group, err := scanGroup(tx.QueryRow(ctx, `SELECT g.id::text, g.name, g.priority, g.can_read, g.can_post, g.can_delete,
+		g.can_manage_members, g.can_manage_groups
+		FROM odysseia.forum_members m
+		JOIN odysseia.identity_groups g ON g.id = m.role_id
+		WHERE m.forum_id=$1 AND m.user_id=$2`, forumID, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identity.Group{}, forum.ErrNotFound
+	}
+	return group, err
+}
+
+func scanGroup(row pgx.Row) (identity.Group, error) {
+	var group identity.Group
+	var read, post, delete, manageMembers, manageGroups bool
+	err := row.Scan(&group.ID, &group.Name, &group.Priority, &read, &post, &delete, &manageMembers, &manageGroups)
+	if err != nil {
+		return identity.Group{}, err
+	}
+	group.Grants = identity.GrantsFromFlags(read, post, delete, manageMembers, manageGroups)
+	return group, nil
+}
+
+// requireRemainingManager keeps at least one member whose winning role grants
+// manage_members. The stored forum role is what staff compare for hierarchy;
+// catalog groups still count here so a catalog owner remains a manager.
+func requireRemainingManager(ctx context.Context, tx pgx.Tx, forumID, userID, nextRoleID string, remove bool) error {
+	var managers int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM odysseia.forum_members m
+		WHERE m.forum_id=$1
+		  AND (NOT $4::bool OR m.user_id <> $2::uuid)
+		  AND COALESCE((
+		    SELECT g.can_manage_members
+		    FROM odysseia.identity_groups g
+		    WHERE g.id = CASE WHEN m.user_id=$2::uuid AND NOT $4::bool THEN $3::uuid ELSE m.role_id END
+		       OR g.id IN (SELECT ug.group_id FROM odysseia.user_groups ug WHERE ug.user_id=m.user_id)
+		    ORDER BY g.priority DESC, g.id
+		    LIMIT 1
+		  ), false)`, forumID, userID, nextRoleID, remove).Scan(&managers)
+	if err != nil {
+		return err
+	}
+	if managers == 0 {
+		return forum.ErrLastManager
+	}
+	return nil
 }
 
 func memberInsertMiss(ctx context.Context, tx pgx.Tx, forumID string, change forum.MemberChange) error {

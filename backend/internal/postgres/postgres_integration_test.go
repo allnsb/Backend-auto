@@ -160,6 +160,9 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 	t.Run("collaboration surface", func(t *testing.T) {
 		testCollaboration(t, ctx, migrationURL, pool)
 	})
+	t.Run("forum role ceiling", func(t *testing.T) {
+		testRoleCeiling(t, ctx, migrationURL, pool)
+	})
 	t.Run("discussion modes and fixed channels", func(t *testing.T) {
 		owner, err := Open(ctx, migrationURL)
 		if err != nil {

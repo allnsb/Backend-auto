@@ -301,7 +301,7 @@
       },
       "post": {
         "operationId": "addForumMember",
-        "description": "Adds a local user to the forum. role_id defaults to the built-in member group. Requires manage_members on the caller's winning role for this forum. An existing membership returns 409.",
+        "description": "Adds a local user to the forum. role_id defaults to the built-in member group. Requires manage_members on the caller's winning role. The granted role priority must be strictly below the caller's effective priority in this forum. An existing membership returns 409 member_exists.",
         "security": [
           {
             "accessToken": []
@@ -371,7 +371,7 @@
     "/v1/forums/{forum_id}/members/{user_id}": {
       "delete": {
         "operationId": "removeForumMember",
-        "description": "Removes a forum member, records the removal and enqueues a realtime disconnect in the same transaction. Requires manage_members. The maintenance command remains available for audited operator retries.",
+        "description": "Removes a forum member, records the removal and enqueues a realtime disconnect in the same transaction. Requires manage_members. The target's stored forum role must be strictly below the caller's effective priority. The change is rejected when it would leave the forum with no member whose winning role grants manage_members. The maintenance command remains available for audited operator retries.",
         "security": [
           {
             "accessToken": []
@@ -408,6 +408,9 @@
           "404": {
             "$ref": "#/components/responses/ResourceNotFound"
           },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
+          },
           "503": {
             "$ref": "#/components/responses/Unavailable"
           }
@@ -417,7 +420,7 @@
     "/v1/forums/{forum_id}/members/{user_id}/role": {
       "put": {
         "operationId": "setForumMemberRole",
-        "description": "Sets the single role stored on this forum membership. Requires manage_members. Effective grants still follow the highest-priority applicable role, which may be a catalog assignment.",
+        "description": "Sets the single role stored on this forum membership. Requires manage_members. Both the member's current forum role and the new role must be strictly below the caller's effective priority. Demotion is rejected when the forum would have no remaining manager. Effective grants still follow the highest-priority applicable role, which may be a catalog assignment.",
         "security": [
           {
             "accessToken": []
@@ -463,6 +466,9 @@
           },
           "404": {
             "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
           },
           "422": {
             "$ref": "#/components/responses/InvalidInput"
@@ -1621,6 +1627,7 @@
               "resource_not_found",
               "permission_denied",
               "member_exists",
+              "last_manager",
               "idempotency_conflict",
               "invalid_reference",
               "invalid_input",
@@ -2286,7 +2293,17 @@
         }
       },
       "PermissionDenied": {
-        "description": "The caller is authenticated and the resource is visible, but the winning role does not include the required grant.",
+        "description": "The caller lacks the required grant, or the forum role being assigned or edited is not strictly below the caller's effective priority.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "LastManager": {
+        "description": "The forum would have no member whose winning role grants manage_members.",
         "content": {
           "application/problem+json": {
             "schema": {

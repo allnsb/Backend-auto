@@ -134,6 +134,121 @@ func testCollaboration(t *testing.T, ctx context.Context, migrationURL string, r
 	}
 }
 
+func testRoleCeiling(t *testing.T, ctx context.Context, migrationURL string, runtimePool *pgxpool.Pool) {
+	t.Helper()
+	ownerPool, err := Open(ctx, migrationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownerPool.Close()
+	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
+		GRANT SELECT, INSERT ON odysseia.users TO odysseia_runtime;
+		GRANT SELECT ON odysseia.forums, odysseia.identity_groups TO odysseia_runtime;
+		GRANT SELECT, INSERT, UPDATE, DELETE ON odysseia.forum_members TO odysseia_runtime;
+		GRANT SELECT, INSERT, DELETE ON odysseia.user_groups TO odysseia_runtime;
+		GRANT INSERT ON odysseia.forum_member_removals TO odysseia_runtime;
+		GRANT INSERT (method, payload) ON odysseia.realtime_outbox TO odysseia_runtime;
+		GRANT USAGE ON SEQUENCE odysseia.realtime_outbox_id_seq TO odysseia_runtime;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := NewUsers(runtimePool)
+	moderator, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "moderator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "peer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chief, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "chief"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := NewForums(ownerPool).Provision(ctx, "role ceiling", []string{moderator.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ownerPool.Exec(ctx, `UPDATE odysseia.forum_members SET role_id=$2 WHERE forum_id=$1 AND user_id=$3`, board.ID, identity.ModeratorGroupID, moderator.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewCollaboration(runtimePool)
+	for _, roleID := range []string{identity.OwnerGroupID, identity.ModeratorGroupID} {
+		if _, err := store.AddMember(ctx, moderator.ID, board.ID, forum.MemberChange{UserID: plain.ID, RoleID: roleID}); !errors.Is(err, forum.ErrForbidden) {
+			t.Fatalf("assign role %s: %v", roleID, err)
+		}
+	}
+	if _, err := store.AddMember(ctx, moderator.ID, board.ID, forum.MemberChange{UserID: plain.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for _, roleID := range []string{identity.OwnerGroupID, identity.ModeratorGroupID} {
+		if _, err := store.SetMemberRole(ctx, moderator.ID, board.ID, plain.ID, roleID); !errors.Is(err, forum.ErrForbidden) {
+			t.Fatalf("promote %s: %v", roleID, err)
+		}
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id, role_id) VALUES ($1,$2,$3)`, board.ID, peer.ID, identity.ModeratorGroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id, role_id) VALUES ($1,$2,$3)`, board.ID, chief.ID, identity.OwnerGroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetMemberRole(ctx, moderator.ID, board.ID, peer.ID, identity.MemberGroupID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("demote peer: %v", err)
+	}
+	if _, err := store.RemoveMember(ctx, moderator.ID, board.ID, peer.ID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("remove peer: %v", err)
+	}
+	if _, err := store.RemoveMember(ctx, moderator.ID, board.ID, chief.ID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("remove owner role: %v", err)
+	}
+	if _, err := store.RemoveMember(ctx, moderator.ID, board.ID, moderator.ID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("remove self: %v", err)
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1,$2)`, chief.ID, identity.OwnerGroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetMemberRole(ctx, chief.ID, board.ID, peer.ID, identity.MemberGroupID); err != nil {
+		t.Fatalf("owner demotes a lower moderator: %v", err)
+	}
+
+	keeper, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "keeper"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	steward := "00000000-0000-4000-8000-00000000000a"
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.identity_groups
+		(id, name, priority, can_read, can_post, can_delete, can_manage_members, can_manage_groups)
+		VALUES ($1, 'steward', 450, true, true, false, true, false)`, steward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1,$2)`, keeper.ID, steward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	solo, err := NewForums(ownerPool).Provision(ctx, "last manager", []string{keeper.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddMember(ctx, keeper.ID, solo.ID, forum.MemberChange{UserID: plain.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RemoveMember(ctx, keeper.ID, solo.ID, keeper.ID); !errors.Is(err, forum.ErrLastManager) {
+		t.Fatalf("remove last manager: %v", err)
+	}
+	if _, err := store.SetMemberRole(ctx, keeper.ID, solo.ID, keeper.ID, identity.MemberGroupID); err != nil {
+		t.Fatalf("stored role can stay member while the catalog grant remains: %v", err)
+	}
+}
+
 func containsGrant(grants []string, grant string) bool {
 	for _, item := range grants {
 		if item == grant {
