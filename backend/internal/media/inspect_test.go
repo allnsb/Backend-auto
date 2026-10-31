@@ -10,6 +10,11 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -158,13 +163,18 @@ func TestInspectVoiceDuration(t *testing.T) {
 		t.Fatalf("mp4 location duration=%d err=%v", got.DurationMS, err)
 	}
 
-	fragment := buildFragmentedMP4(1500)
+	fragment := buildFragmentedMP4(1500, 1000)
 	got, err = Inspect(fragment, 1500, limits)
 	if err != nil || got.ContentType != "audio/mp4" || got.DurationMS != 1500 {
 		t.Fatalf("fragmented mp4 duration=%d err=%v", got.DurationMS, err)
 	}
-	if _, err := Inspect(buildFragmentedMP4(400_000), 400_000, limits); err != ErrDuration {
+	if _, err := Inspect(buildFragmentedMP4(400_000, 1000), 400_000, limits); err != ErrDuration {
 		t.Fatalf("long fragmented mp4 err=%v", err)
+	}
+	// 5s at 48kHz is 240000 ticks. Dividing by the movie scale (1000) yields ~240s.
+	mediaTicks := parseMust(t, buildFragmentedMP4(5*48000, 48000))
+	if mediaTicks != 5000 {
+		t.Fatalf("mdhd timescale duration=%d", mediaTicks)
 	}
 	unspecified := buildMP4(0, "soun")
 	got, err = Inspect(unspecified, 1500, limits)
@@ -210,13 +220,36 @@ func webmLocationTag() []byte {
 	return ebmlElement([]byte{0x12, 0x54, 0xC3, 0x67}, simple)
 }
 
-func buildFragmentedMP4(sampleMS int) []byte {
-	base := buildMP4(0, "soun")
+func buildFragmentedMP4(sampleTicks, mediaScale int) []byte {
+	ftyp := mp4Box("ftyp", []byte("M4A \x00\x00\x00\x00M4A "))
+	mvhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(mvhd[12:16], 1000)
+	tkhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(tkhd[12:16], 1)
+	mdhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(mdhd[12:16], uint32(mediaScale))
+	hdlr := make([]byte, 12)
+	copy(hdlr[8:12], "soun")
+	mdia := append(mp4Box("mdhd", mdhd), mp4Box("hdlr", hdlr)...)
+	trak := append(mp4Box("tkhd", tkhd), mp4Box("mdia", mdia)...)
+	moov := append(mp4Box("mvhd", mvhd), mp4Box("trak", trak)...)
+	tfhd := make([]byte, 8)
+	binary.BigEndian.PutUint32(tfhd[4:8], 1)
 	trun := make([]byte, 12)
 	binary.BigEndian.PutUint32(trun[0:4], 0x000100)
 	binary.BigEndian.PutUint32(trun[4:8], 1)
-	binary.BigEndian.PutUint32(trun[8:12], uint32(sampleMS))
-	return append(base, mp4Box("moof", mp4Box("traf", mp4Box("trun", trun)))...)
+	binary.BigEndian.PutUint32(trun[8:12], uint32(sampleTicks))
+	moof := mp4Box("moof", mp4Box("traf", append(mp4Box("tfhd", tfhd), mp4Box("trun", trun)...)))
+	return append(append(ftyp, mp4Box("moov", moov)...), moof...)
+}
+
+func parseMust(t *testing.T, data []byte) int {
+	t.Helper()
+	ms, err := parseMP4(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ms
 }
 
 func mustJPEG(t *testing.T) []byte {
@@ -402,4 +435,94 @@ func ebmlSize(n int) []byte {
 		return []byte{0x80 | byte(n)}
 	}
 	return []byte{0x40 | byte(n>>8), byte(n)}
+}
+
+func TestFFmpegMP4StaysPlayableAfterLocationStrip(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Fatal(err)
+	}
+	fast := renderMP4(t, "0.3", "+faststart", "-metadata", "location=+37.0000-122.0000/")
+	cleaned, err := stripMP4Location(fast)
+	if err != nil || len(cleaned) != len(fast) || bytes.Contains(cleaned, []byte("loci")) || bytes.Contains(cleaned, []byte("earth")) {
+		t.Fatalf("faststart strip len=%d/%d err=%v", len(cleaned), len(fast), err)
+	}
+	if payload := boxPayload(t, fast, "stco"); payload == nil || !bytes.Equal(payload, boxPayload(t, cleaned, "stco")) {
+		t.Fatal("stco offsets changed")
+	}
+	assertMP4Decodable(t, cleaned)
+	if ms := parseMust(t, cleaned); ms < 250 || ms > 400 {
+		t.Fatalf("faststart duration=%d", ms)
+	}
+
+	frag := renderMP4(t, "5", "frag_keyframe+empty_moov+default_base_moof")
+	cleaned, err = stripMP4Location(frag)
+	if err != nil || len(cleaned) != len(frag) {
+		t.Fatalf("fragment strip err=%v", err)
+	}
+	if payload := boxPayload(t, frag, "tfhd"); payload == nil || !bytes.Equal(payload, boxPayload(t, cleaned, "tfhd")) {
+		t.Fatal("tfhd offsets changed")
+	}
+	ms := parseMust(t, cleaned)
+	if ms < 4800 || ms > 5300 {
+		t.Fatalf("fragment duration=%d, want about 5000", ms)
+	}
+	assertMP4Decodable(t, cleaned)
+}
+
+func renderMP4(t *testing.T, duration, movflags string, extra ...string) []byte {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "in.m4a")
+	args := []string{"-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", duration, "-c:a", "aac", "-movflags", movflags}
+	args = append(args, extra...)
+	args = append(args, path)
+	out, err := exec.Command("ffmpeg", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ffmpeg: %v %s", err, out)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func assertMP4Decodable(t *testing.T, data []byte) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "out.m4a")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("ffmpeg", "-v", "error", "-i", path, "-f", "null", "-").CombinedOutput()
+	if err != nil {
+		t.Fatalf("decode: %v %s", err, out)
+	}
+	probe, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(string(probe)), 64)
+	if err != nil || seconds <= 0 {
+		t.Fatalf("ffprobe duration %q", probe)
+	}
+}
+
+func boxPayload(t *testing.T, data []byte, kind string) []byte {
+	t.Helper()
+	i := 0
+	for i+8 <= len(data) {
+		box, err := readMP4Box(data, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if box.kind == kind {
+			return append([]byte(nil), data[box.payload:box.end]...)
+		}
+		if mp4Container(box.kind) {
+			if found := boxPayload(t, data[box.payload:box.end], kind); found != nil {
+				return found
+			}
+		}
+		i = box.end
+	}
+	return nil
 }

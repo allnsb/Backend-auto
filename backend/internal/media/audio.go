@@ -211,31 +211,37 @@ func readEBMLFloat(payload []byte) (float64, error) {
 }
 
 // parseMP4 returns the duration in milliseconds. A video track is rejected.
-// A zero movie header is not corrupt: fragmented recordings leave mvhd at 0
-// and put the length in mehd or trun. Zero means the caller should use the
+// mvhd and mehd use the movie timescale. trun sample durations use the audio
+// track's mdhd timescale. A zero result means the caller should use the
 // client-reported duration and the size floor.
 func parseMP4(data []byte) (int, error) {
-	state := mp4State{}
-	if err := walkMP4(data, 0, &state); err != nil {
+	state := mp4State{samples: map[uint32]uint64{}}
+	if err := walkMP4(data, 0, &mp4Cursor{state: &state}); err != nil {
 		return 0, err
 	}
 	if state.video || !state.ftyp || !state.audio {
 		return 0, ErrType
 	}
-	if state.timescale == 0 {
-		return 0, ErrCorrupt
-	}
-	ticks := state.headerTicks
-	if ticks == 0 {
-		ticks = state.fragmentTicks
-	}
-	if ticks == 0 {
-		ticks = state.sampleTicks
-	}
-	if ticks == 0 {
+	var ms uint64
+	switch {
+	case state.headerTicks > 0:
+		if state.movieScale == 0 {
+			return 0, ErrCorrupt
+		}
+		ms = state.headerTicks * 1000 / uint64(state.movieScale)
+	case state.fragmentTicks > 0:
+		if state.movieScale == 0 {
+			return 0, ErrCorrupt
+		}
+		ms = state.fragmentTicks * 1000 / uint64(state.movieScale)
+	case state.samples[state.audioTrack] > 0:
+		if state.audioScale == 0 {
+			return 0, ErrCorrupt
+		}
+		ms = state.samples[state.audioTrack] * 1000 / uint64(state.audioScale)
+	default:
 		return 0, nil
 	}
-	ms := ticks * 1000 / uint64(state.timescale)
 	if ms < 1 || ms > uint64(math.MaxInt32) {
 		return 0, ErrDuration
 	}
@@ -244,88 +250,154 @@ func parseMP4(data []byte) (int, error) {
 
 type mp4State struct {
 	ftyp, audio, video bool
-	timescale          uint32
+	movieScale         uint32
 	headerTicks        uint64
 	fragmentTicks      uint64
-	sampleTicks        uint64
+	audioScale         uint32
+	audioTrack         uint32
+	samples            map[uint32]uint64
 	boxes              int
 }
 
-func walkMP4(data []byte, depth int, state *mp4State) error {
+type mp4Cursor struct {
+	state           *mp4State
+	trakID          uint32
+	trakScale       uint32
+	trakAudio       bool
+	fragTrack       uint32
+	defaultDuration uint32
+}
+
+func walkMP4(data []byte, depth int, cur *mp4Cursor) error {
 	if depth > 8 {
 		return ErrCorrupt
 	}
 	i := 0
 	for i+8 <= len(data) {
-		state.boxes++
-		if state.boxes > 10000 {
+		box, err := readMP4Box(data, i)
+		if err != nil {
+			return err
+		}
+		cur.state.boxes++
+		if cur.state.boxes > 10000 {
 			return ErrCorrupt
 		}
-		size := int(binary.BigEndian.Uint32(data[i : i+4]))
-		kind := string(data[i+4 : i+8])
-		header := 8
-		if size == 1 {
-			if i+16 > len(data) {
-				return ErrCorrupt
+		payload := data[box.payload:box.end]
+		switch box.kind {
+		case "moov", "mdia", "mvex", "moof":
+			if err := walkMP4(payload, depth+1, cur); err != nil {
+				return err
 			}
-			large := binary.BigEndian.Uint64(data[i+8 : i+16])
-			if large > uint64(len(data)) || large < 16 {
-				return ErrCorrupt
+		case "trak":
+			child := *cur
+			child.trakID, child.trakScale, child.trakAudio = 0, 0, false
+			if err := walkMP4(payload, depth+1, &child); err != nil {
+				return err
 			}
-			size = int(large)
-			header = 16
-		}
-		if size == 0 {
-			size = len(data) - i
-		}
-		if size < header || i+size > len(data) {
-			return ErrCorrupt
-		}
-		payload := data[i+header : i+size]
-		switch kind {
-		case "moov", "trak", "mdia", "minf", "mvex", "moof", "traf":
-			if err := walkMP4(payload, depth+1, state); err != nil {
+			if child.trakAudio {
+				cur.state.audio = true
+				cur.state.audioScale = child.trakScale
+				cur.state.audioTrack = child.trakID
+			}
+		case "traf":
+			child := *cur
+			child.fragTrack, child.defaultDuration = 0, 0
+			if err := walkMP4(payload, depth+1, &child); err != nil {
 				return err
 			}
 		case "mvhd":
-			timescale, ticks, err := readMVHD(payload)
+			scale, ticks, err := readMVHD(payload)
 			if err != nil {
 				return err
 			}
-			if state.timescale != 0 {
+			if cur.state.movieScale != 0 {
 				return ErrCorrupt
 			}
-			state.timescale = timescale
-			state.headerTicks = ticks
+			cur.state.movieScale = scale
+			cur.state.headerTicks = ticks
+		case "mdhd":
+			scale, err := readMDHDScale(payload)
+			if err != nil {
+				return err
+			}
+			cur.trakScale = scale
+		case "tkhd":
+			id, err := readTKHD(payload)
+			if err != nil {
+				return err
+			}
+			cur.trakID = id
 		case "mehd":
 			ticks, err := readMEHD(payload)
 			if err != nil {
 				return err
 			}
-			state.fragmentTicks = ticks
-		case "trun":
-			if err := addTrun(payload, state); err != nil {
+			cur.state.fragmentTicks = ticks
+		case "tfhd":
+			id, duration, err := readTFHD(payload)
+			if err != nil {
 				return err
 			}
+			cur.fragTrack = id
+			cur.defaultDuration = duration
+		case "trun":
+			ticks, err := trunTicks(payload, cur.defaultDuration)
+			if err != nil {
+				return err
+			}
+			cur.state.samples[cur.fragTrack] += ticks
 		case "hdlr":
 			if len(payload) < 12 {
 				return ErrCorrupt
 			}
 			switch string(payload[8:12]) {
 			case "vide":
-				state.video = true
+				cur.state.video = true
 			case "soun":
-				state.audio = true
+				cur.trakAudio = true
 			}
 		case "ftyp":
-			state.ftyp = true
+			cur.state.ftyp = true
 		}
-		i += size
+		i = box.end
 	}
 	if i != len(data) {
 		return ErrCorrupt
 	}
 	return nil
+}
+
+type mp4Span struct {
+	kind    string
+	payload int
+	end     int
+}
+
+func readMP4Box(data []byte, i int) (mp4Span, error) {
+	if i+8 > len(data) {
+		return mp4Span{}, ErrCorrupt
+	}
+	size := int(binary.BigEndian.Uint32(data[i : i+4]))
+	kind := string(data[i+4 : i+8])
+	header := 8
+	if size == 1 {
+		if i+16 > len(data) {
+			return mp4Span{}, ErrCorrupt
+		}
+		large := binary.BigEndian.Uint64(data[i+8 : i+16])
+		if large > uint64(len(data)-i) || large < 16 {
+			return mp4Span{}, ErrCorrupt
+		}
+		size = int(large)
+		header = 16
+	}
+	if size == 0 {
+		size = len(data) - i
+	}
+	if size < header || i+size > len(data) {
+		return mp4Span{}, ErrCorrupt
+	}
+	return mp4Span{kind: kind, payload: i + header, end: i + size}, nil
 }
 
 func readMVHD(payload []byte) (uint32, uint64, error) {
@@ -366,14 +438,54 @@ func readMEHD(payload []byte) (uint64, error) {
 	return uint64(binary.BigEndian.Uint32(payload[4:8])), nil
 }
 
-func addTrun(payload []byte, state *mp4State) error {
+func readMDHDScale(payload []byte) (uint32, error) {
+	scale, _, err := readMVHD(payload)
+	return scale, err
+}
+
+func readTKHD(payload []byte) (uint32, error) {
+	if payload[0] == 1 {
+		if len(payload) < 24 {
+			return 0, ErrCorrupt
+		}
+		return binary.BigEndian.Uint32(payload[20:24]), nil
+	}
+	if len(payload) < 16 {
+		return 0, ErrCorrupt
+	}
+	return binary.BigEndian.Uint32(payload[12:16]), nil
+}
+
+func readTFHD(payload []byte) (uint32, uint32, error) {
 	if len(payload) < 8 {
-		return ErrCorrupt
+		return 0, 0, ErrCorrupt
+	}
+	flags := binary.BigEndian.Uint32(payload[:4]) & 0xFFFFFF
+	trackID := binary.BigEndian.Uint32(payload[4:8])
+	pos := 8
+	if flags&0x1 != 0 {
+		pos += 8
+	}
+	if flags&0x2 != 0 {
+		pos += 4
+	}
+	if flags&0x8 == 0 {
+		return trackID, 0, nil
+	}
+	if pos+4 > len(payload) {
+		return 0, 0, ErrCorrupt
+	}
+	return trackID, binary.BigEndian.Uint32(payload[pos : pos+4]), nil
+}
+
+func trunTicks(payload []byte, defaultDuration uint32) (uint64, error) {
+	if len(payload) < 8 {
+		return 0, ErrCorrupt
 	}
 	flags := binary.BigEndian.Uint32(payload[:4]) & 0xFFFFFF
 	count := binary.BigEndian.Uint32(payload[4:8])
 	if count > 1_000_000 {
-		return ErrCorrupt
+		return 0, ErrCorrupt
 	}
 	pos := 8
 	if flags&0x1 != 0 {
@@ -382,13 +494,16 @@ func addTrun(payload []byte, state *mp4State) error {
 	if flags&0x4 != 0 {
 		pos += 4
 	}
+	var ticks uint64
 	for range count {
 		if flags&0x100 != 0 {
 			if pos+4 > len(payload) {
-				return ErrCorrupt
+				return 0, ErrCorrupt
 			}
-			state.sampleTicks += uint64(binary.BigEndian.Uint32(payload[pos : pos+4]))
+			ticks += uint64(binary.BigEndian.Uint32(payload[pos : pos+4]))
 			pos += 4
+		} else {
+			ticks += uint64(defaultDuration)
 		}
 		if flags&0x200 != 0 {
 			pos += 4
@@ -400,69 +515,56 @@ func addTrun(payload []byte, state *mp4State) error {
 			pos += 4
 		}
 		if pos > len(payload) {
-			return ErrCorrupt
+			return 0, ErrCorrupt
 		}
 	}
-	return nil
+	return ticks, nil
 }
 
-// stripMP4Location drops udta and the ISO 6709 xyz box. Those hold GPS in
-// recorder output. Sample tables and the movie header stay intact.
+// stripMP4Location turns udta and xyz boxes into equal-length free boxes.
+// Chunk offsets and tfhd base-data offsets stay valid because no byte moves.
 func stripMP4Location(data []byte) ([]byte, error) {
-	return rewriteMP4(data, 0)
+	out := append([]byte(nil), data...)
+	if err := blankMP4Location(out, 0); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-func rewriteMP4(data []byte, depth int) ([]byte, error) {
+func blankMP4Location(data []byte, depth int) error {
 	if depth > 8 {
-		return nil, ErrCorrupt
+		return ErrCorrupt
 	}
-	out := make([]byte, 0, len(data))
 	i := 0
 	boxes := 0
 	for i+8 <= len(data) {
+		box, err := readMP4Box(data, i)
+		if err != nil {
+			return err
+		}
 		boxes++
 		if boxes > 10000 {
-			return nil, ErrCorrupt
+			return ErrCorrupt
 		}
-		size := int(binary.BigEndian.Uint32(data[i : i+4]))
-		kind := string(data[i+4 : i+8])
-		header := 8
-		if size == 1 {
-			if i+16 > len(data) {
-				return nil, ErrCorrupt
+		if box.kind == "udta" || box.kind == "xyz " || box.kind == "\xa9xyz" {
+			copy(data[i+4:i+8], "free")
+			for n := box.payload; n < box.end; n++ {
+				data[n] = 0
 			}
-			large := binary.BigEndian.Uint64(data[i+8 : i+16])
-			if large > uint64(len(data)-i) || large < 16 {
-				return nil, ErrCorrupt
-			}
-			size = int(large)
-			header = 16
-		}
-		if size == 0 {
-			size = len(data) - i
-		}
-		if size < header || i+size > len(data) {
-			return nil, ErrCorrupt
-		}
-		payload := data[i+header : i+size]
-		i += size
-		if kind == "udta" || kind == "xyz " || kind == "\xa9xyz" {
+			i = box.end
 			continue
 		}
-		body := payload
-		if mp4Container(kind) {
-			rewritten, err := rewriteMP4(payload, depth+1)
-			if err != nil {
-				return nil, err
+		if mp4Container(box.kind) {
+			if err := blankMP4Location(data[box.payload:box.end], depth+1); err != nil {
+				return err
 			}
-			body = rewritten
 		}
-		out = append(out, writeMP4Box(kind, body)...)
+		i = box.end
 	}
 	if i != len(data) {
-		return nil, ErrCorrupt
+		return ErrCorrupt
 	}
-	return out, nil
+	return nil
 }
 
 func mp4Container(kind string) bool {
@@ -472,14 +574,6 @@ func mp4Container(kind string) bool {
 	default:
 		return false
 	}
-}
-
-func writeMP4Box(kind string, payload []byte) []byte {
-	out := make([]byte, 8+len(payload))
-	binary.BigEndian.PutUint32(out[:4], uint32(len(out)))
-	copy(out[4:8], kind)
-	copy(out[8:], payload)
-	return out
 }
 
 // stripWebMLocation removes Matroska Tags elements. Voice notes do not need
