@@ -43,8 +43,8 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || cfg.MaxWriteTransactions != tc.want {
-				t.Fatalf("budget=%d, want=%d: %v", cfg.MaxWriteTransactions, tc.want, err)
+			if err != nil || cfg.MaxWriteTransactions != tc.want || cfg.ConversationMemberLimit != 50 {
+				t.Fatalf("budget=%d limit=%d, want budget=%d limit=50: %v", cfg.MaxWriteTransactions, cfg.ConversationMemberLimit, tc.want, err)
 			}
 		})
 	}

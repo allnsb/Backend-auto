@@ -52,10 +52,14 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer forums.Close()
+	if err := forums.UseConversationMemberLimit(cfg.ConversationMemberLimit); err != nil {
+		return err
+	}
 	users := postgres.NewUsers(pool)
 	api := httpapi.NewAPI(verifier.Authenticate, users.Ensure)
 	api.RegisterForums(forums)
 	api.RegisterChannels(forums)
+	api.RegisterConversations(forums)
 	api.RegisterCollaboration(postgres.NewCollaboration(pool))
 	if err := api.RegisterRealtime(tokens, forums, cfg.RealtimeProxySecret); err != nil {
 		return err

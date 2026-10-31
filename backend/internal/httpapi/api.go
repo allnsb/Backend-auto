@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/identity"
 	"odysseia.local/backend/internal/telemetry"
@@ -121,21 +122,21 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 413, "body_too_large")
 	case errors.Is(err, errRequestTimeout):
 		writeProblem(w, 408, "request_timeout")
-	case errors.Is(err, forum.ErrNotFound):
+	case errors.Is(err, forum.ErrNotFound), errors.Is(err, conversation.ErrNotFound):
 		writeProblem(w, 404, "resource_not_found")
-	case errors.Is(err, forum.ErrForbidden):
+	case errors.Is(err, forum.ErrForbidden), errors.Is(err, conversation.ErrForbidden):
 		writeProblem(w, 403, "permission_denied")
 	case errors.Is(err, forum.ErrExists):
 		writeProblem(w, 409, "member_exists")
-	case errors.Is(err, forum.ErrLastManager):
+	case errors.Is(err, forum.ErrLastManager), errors.Is(err, conversation.ErrLastManager):
 		writeProblem(w, 409, "last_manager")
-	case errors.Is(err, forum.ErrConflict):
+	case errors.Is(err, forum.ErrConflict), errors.Is(err, conversation.ErrConflict):
 		writeProblem(w, 409, "idempotency_conflict")
-	case errors.Is(err, forum.ErrReference):
+	case errors.Is(err, forum.ErrReference), errors.Is(err, conversation.ErrReference):
 		writeProblem(w, 422, "invalid_reference")
-	case errors.Is(err, forum.ErrInvalid):
+	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid):
 		writeProblem(w, 422, "invalid_input")
-	case errors.Is(err, forum.ErrBusy):
+	case errors.Is(err, forum.ErrBusy), errors.Is(err, conversation.ErrBusy):
 		w.Header().Set("Retry-After", "1")
 		writeProblem(w, http.StatusServiceUnavailable, "write_capacity_exceeded")
 	default:

@@ -1,6 +1,6 @@
 # Centrifugo 合成 WSS 接入
 
-复用官方 Centrifugo 6.10.2 的 PostgreSQL 消费器、WSS 和 Go SDK 0.13.0；版本、下载包 SHA-256 与许可见 [versions.lock.json](versions.lock.json)。当前开发契约为 OpenAPI info.version=0.5.1，已由频道 JWT 改为每次订阅的 HTTPS 代理授权。结果及异步撤权边界见 [验证记录](../../../docs/成员撤权与消费者故障验证-2026-10-28.md)。
+复用官方 Centrifugo 6.10.2 的 PostgreSQL 消费器、WSS 和 Go SDK 0.13.0；版本、下载包 SHA-256 与许可见 [versions.lock.json](versions.lock.json)。当前开发契约为 OpenAPI info.version=0.7.0。论坛、帖子和固定频道由每次订阅的 HTTPS 代理授权；文字会话的个人收件箱是 user-limited channel，不经过该代理。频道 JWT 已不再使用。早期撤权结果见 [验证记录](../../../docs/成员撤权与消费者故障验证-2026-10-28.md)。
 
 P2 后端 A01–A08 已完成。当前完整验收与交接入口是 [P2 验收](../../../docs/P2后端验收与交接-2026-10-29.md)，本文件保留运行和协议约定；正式上线指标与同事前端页面签收单独跟进。
 
@@ -30,7 +30,9 @@ cluster 必须与 integration,realtime 一起使用。脚本叠加 [compose.clus
 
 [config.example.json](config.example.json) 的尖括号均为占位符，不是自动环境变量展开。用受限配置或部署秘密注入真实值；连接签名密钥和私有代理凭据分别对应 ODYSSEIA_REALTIME_CONNECTION_SECRET、ODYSSEIA_REALTIME_PROXY_SECRET，彼此不同，各用至少 32 字节随机秘密。删除旧 subscription_token 验签配置；旧频道 JWT 不属于当前接入。
 
-forum／topic namespaces 启用 subscribe_proxy_enabled，代理地址必须是校验证书的 HTTPS。示例通过 http.tls.server_ca_pem 指定 API CA。代理的 X-Odysseia-Proxy-Key 只放 http.static_headers；http_headers、emulated_headers 保持空，不能让客户端覆盖它。不安装系统 CA、不关闭证书检查，生产还应隔离内部路由并限制来源。
+forum／topic／channel namespaces 启用 subscribe_proxy_enabled，代理地址必须是校验证书的 HTTPS。示例通过 http.tls.server_ca_pem 指定 API CA。代理的 X-Odysseia-Proxy-Key 只放 http.static_headers；http_headers、emulated_headers 保持空，不能让客户端覆盖它。不安装系统 CA、不关闭证书检查，生产还应隔离内部路由并限制来源。
+
+`inbox` namespace 使用 `allow_user_limited_channels`。客户端订阅 `inbox:#` 加上连接 JWT 的 `sub`（本地用户 UUID）。该频道不走订阅代理。`allow_history_for_subscriber` 只让当前订阅者读取 64 条／60 秒历史，供短恢复；权威历史仍是 HTTPS。不要打开 `allow_history_for_client` 或 `allow_subscribe_for_client`。第十项迁移不要求排空，但要先装上这个 namespace，再让 API 写会话。
 
 连接 JWT 只认证本地用户，不能授权频道；客户端以无频道 token 的方式订阅，代理复用当前 GetForum／GetTopic 读取权限。data、meta、labels 不提供权限，API／数据库失败不默认放行。namespace 默认禁止客户端 publish／直接读 WSS history，正文写入与持久历史仍走授权 HTTPS。
 

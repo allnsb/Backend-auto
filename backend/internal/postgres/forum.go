@@ -13,15 +13,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"odysseia.local/backend/internal/conversation"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/message"
 	"odysseia.local/backend/internal/telemetry"
 )
 
 type Forums struct {
-	pool   *pgxpool.Pool
-	writes *writeAdmission
-	pages  *messagePageCache
+	pool                    *pgxpool.Pool
+	writes                  *writeAdmission
+	pages                   *messagePageCache
+	conversationMemberLimit int
 }
 
 func NewForums(pool *pgxpool.Pool) *Forums {
@@ -31,7 +33,10 @@ func NewForums(pool *pgxpool.Pool) *Forums {
 	poolLimit := int64(pool.Config().MaxConns)
 	readReserve := (poolLimit + 2) / 3
 	writers := max(int64(1), poolLimit-readReserve)
-	return &Forums{pool: pool, writes: newWriteAdmission(writers, forumWriteQueueLimit)}
+	return &Forums{
+		pool: pool, writes: newWriteAdmission(writers, forumWriteQueueLimit),
+		conversationMemberLimit: conversation.MaxMembers,
+	}
 }
 
 const topicColumns = `t.id::text, t.forum_id::text, t.position, t.author_id::text, t.title, t.mode, t.created_at`
