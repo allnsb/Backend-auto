@@ -129,8 +129,8 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 		}
 		applied += result.applied
 	}
-	if applied != 8 {
-		t.Fatalf("concurrent migrations applied = %d, want 8", applied)
+	if applied != 9 {
+		t.Fatalf("concurrent migrations applied = %d, want 9", applied)
 	}
 	applied, err = MigrateUp(ctx, migrationURL)
 	if err != nil {
@@ -156,6 +156,9 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 	})
 	t.Run("independent forum", func(t *testing.T) {
 		testForums(t, ctx, migrationURL, pool)
+	})
+	t.Run("collaboration surface", func(t *testing.T) {
+		testCollaboration(t, ctx, migrationURL, pool)
 	})
 	t.Run("discussion modes and fixed channels", func(t *testing.T) {
 		owner, err := Open(ctx, migrationURL)

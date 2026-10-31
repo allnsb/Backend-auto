@@ -32,7 +32,19 @@ func (s *Users) Find(ctx context.Context, external identity.ExternalID) (identit
 	return user, nil
 }
 
-// Provision is an explicit operator command. A repeated external identity reuses its local ID.
+// Ensure returns the local user for a verified external identity, creating one
+// on the first observation. Later calls stay on the read path unless a concurrent
+// first request wins the insert.
+func (s *Users) Ensure(ctx context.Context, external identity.ExternalID) (identity.User, error) {
+	user, err := s.Find(ctx, external)
+	if err == nil || !errors.Is(err, identity.ErrNotFound) {
+		return user, err
+	}
+	return s.Provision(ctx, external)
+}
+
+// Provision is the insert used by the operator command and by Ensure.
+// A repeated external identity reuses its local ID.
 func (s *Users) Provision(ctx context.Context, external identity.ExternalID) (identity.User, error) {
 	var user identity.User
 	err := s.pool.QueryRow(ctx, `INSERT INTO odysseia.users (issuer, subject) VALUES ($1, $2)

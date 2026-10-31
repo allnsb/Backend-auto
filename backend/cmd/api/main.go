@@ -52,9 +52,11 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer forums.Close()
-	api := httpapi.NewAPI(verifier.Authenticate, postgres.NewUsers(pool).Find)
+	users := postgres.NewUsers(pool)
+	api := httpapi.NewAPI(verifier.Authenticate, users.Ensure)
 	api.RegisterForums(forums)
 	api.RegisterChannels(forums)
+	api.RegisterCollaboration(postgres.NewCollaboration(pool))
 	if err := api.RegisterRealtime(tokens, forums, cfg.RealtimeProxySecret); err != nil {
 		return err
 	}

@@ -8,6 +8,40 @@ import (
 	"github.com/google/uuid"
 )
 
+// Member is one user's role inside a forum. The role is a single identity group;
+// additional catalog groups are resolved separately.
+type Member struct {
+	UserID   string `json:"user_id"`
+	RoleID   string `json:"role_id"`
+	RoleName string `json:"role_name"`
+	Priority int    `json:"priority"`
+}
+
+// MemberChange assigns a forum role. An empty RoleID selects the built-in member role.
+type MemberChange struct {
+	UserID string `json:"user_id"`
+	RoleID string `json:"role_id"`
+}
+
+func (c MemberChange) Validate() error {
+	if err := ValidID(c.UserID); err != nil {
+		return err
+	}
+	if c.RoleID == "" {
+		return nil
+	}
+	return ValidID(c.RoleID)
+}
+
+// ValidID accepts the canonical textual form of a non-nil UUID.
+func ValidID(value string) error {
+	id, err := uuid.Parse(value)
+	if err != nil || id == uuid.Nil || id.String() != value {
+		return ErrInvalid
+	}
+	return nil
+}
+
 // MemberRemoval is an operator command, independent of HTTP and the realtime provider.
 type MemberRemoval struct {
 	OperationID string `json:"operation_id"`

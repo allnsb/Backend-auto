@@ -14,6 +14,8 @@ var (
 	ErrInvalid   = errors.New("invalid forum input")
 	ErrReference = errors.New("invalid same-topic reference or root")
 	ErrConflict  = errors.New("idempotency key was already used with different input")
+	ErrExists    = errors.New("forum member already exists")
+	ErrForbidden = errors.New("caller lacks the required grant")
 	ErrBusy      = errors.New("forum write capacity is temporarily exhausted")
 )
 
