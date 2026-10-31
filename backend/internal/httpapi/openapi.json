@@ -245,7 +245,7 @@
     "/v1/forums/{forum_id}/members": {
       "get": {
         "operationId": "listForumMembers",
-        "description": "Lists current forum members and the role stored on each membership. Non-members receive the same 404 as a missing forum. after is an exclusive user id.",
+        "description": "Lists current forum members and the role stored on each membership. priority and role_name are that stored role, not the caller's effective priority from catalog groups. Non-members receive the same 404 as a missing forum. after is an exclusive user id.",
         "security": [
           {
             "accessToken": []

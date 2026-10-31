@@ -8,8 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// Member is one user's role inside a forum. The role is a single identity group;
-// additional catalog groups are resolved separately.
+// Member is the role stored on one forum membership. Priority and RoleName
+// come from that stored role. Catalog groups are not folded in, so a catalog
+// owner can still appear here as member at priority 100.
 type Member struct {
 	UserID   string `json:"user_id"`
 	RoleID   string `json:"role_id"`

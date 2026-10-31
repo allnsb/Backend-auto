@@ -22,7 +22,8 @@ func testCollaboration(t *testing.T, ctx context.Context, migrationURL string, r
 	defer ownerPool.Close()
 	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
 		GRANT SELECT, INSERT ON odysseia.users TO odysseia_runtime;
-		GRANT SELECT ON odysseia.forums, odysseia.identity_groups TO odysseia_runtime;
+		GRANT SELECT, UPDATE (last_topic_position) ON odysseia.forums TO odysseia_runtime;
+		GRANT SELECT ON odysseia.identity_groups TO odysseia_runtime;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON odysseia.forum_members TO odysseia_runtime;
 		GRANT SELECT, INSERT, DELETE ON odysseia.user_groups TO odysseia_runtime;
 		GRANT INSERT ON odysseia.forum_member_removals TO odysseia_runtime;
@@ -143,7 +144,8 @@ func testRoleCeiling(t *testing.T, ctx context.Context, migrationURL string, run
 	defer ownerPool.Close()
 	_, err = ownerPool.Exec(ctx, `GRANT USAGE ON SCHEMA odysseia TO odysseia_runtime;
 		GRANT SELECT, INSERT ON odysseia.users TO odysseia_runtime;
-		GRANT SELECT ON odysseia.forums, odysseia.identity_groups TO odysseia_runtime;
+		GRANT SELECT, UPDATE (last_topic_position) ON odysseia.forums TO odysseia_runtime;
+		GRANT SELECT ON odysseia.identity_groups TO odysseia_runtime;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON odysseia.forum_members TO odysseia_runtime;
 		GRANT SELECT, INSERT, DELETE ON odysseia.user_groups TO odysseia_runtime;
 		GRANT INSERT ON odysseia.forum_member_removals TO odysseia_runtime;

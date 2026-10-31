@@ -62,7 +62,8 @@ func (i *Issuer) Origin() string { return i.origin }
 func (i *Issuer) JWKSURL() string { return i.origin + "/oauth/v2/keys" }
 
 // Handler serves ZITADEL-shaped discovery and JWKS. POST /mock/token mints a
-// development access token; the production token path is advertised but not a login flow.
+// development access token for loopback clients only, using the configured
+// audience. The production token path is advertised but not a login flow.
 func (i *Issuer) Handler(audience string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
@@ -82,10 +83,13 @@ func (i *Issuer) Handler(audience string) http.Handler {
 		})
 	})
 	mux.HandleFunc("POST /mock/token", func(w http.ResponseWriter, r *http.Request) {
+		if !loopbackPeer(r.RemoteAddr) {
+			http.Error(w, "loopback clients only", http.StatusForbidden)
+			return
+		}
 		var body struct {
-			Subject  string `json:"subject"`
-			Audience string `json:"audience"`
-			Alg      string `json:"alg"`
+			Subject string `json:"subject"`
+			Alg     string `json:"alg"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 		decoder.DisallowUnknownFields()
@@ -93,13 +97,10 @@ func (i *Issuer) Handler(audience string) http.Handler {
 			http.Error(w, "invalid subject", http.StatusBadRequest)
 			return
 		}
-		if body.Audience == "" {
-			body.Audience = audience
-		}
 		if body.Alg == "" {
 			body.Alg = AlgRS256
 		}
-		raw, err := i.SignAccessToken(body.Subject, body.Audience, body.Alg, 5*time.Minute)
+		raw, err := i.SignAccessToken(body.Subject, audience, body.Alg, 5*time.Minute)
 		if err != nil {
 			http.Error(w, "unsupported algorithm", http.StatusBadRequest)
 			return

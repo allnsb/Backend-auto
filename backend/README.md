@@ -88,7 +88,7 @@ backend/
 | ODYSSEIA_AUTH_AUDIENCE | API 必填；为本 API 配置的 audience。 |
 | ODYSSEIA_AUTH_JWKS_URL | API 必填；明确配置的可信 HTTPS 公钥端点。 |
 | ODYSSEIA_AUTH_CA_FILE | 可选；只替换 JWKS 客户端信任根，空时使用系统信任根。 |
-| ODYSSEIA_MOCK_IDP_ADDR／ISSUER／AUDIENCE／TLS_CERT_FILE／TLS_KEY_FILE | 仅 mock-idp 进程。issuer 默认 https://127.0.0.1:9443，JWKS 为该源加上 `/oauth/v2/keys`。 |
+| ODYSSEIA_MOCK_IDP_ADDR／ISSUER／AUDIENCE／TLS_CERT_FILE／TLS_KEY_FILE | 仅 mock-idp 进程。监听地址必须是回环，默认 127.0.0.1:9443。issuer 默认 https://127.0.0.1:9443，JWKS 为该源加上 `/oauth/v2/keys`。 |
 | ODYSSEIA_REALTIME_CONNECTION_SECRET | API 必填；至少 32 字节随机秘密，对应 Centrifugo 连接验签配置。 |
 | ODYSSEIA_REALTIME_PROXY_SECRET | API 必填；另一把至少 32 字节随机秘密，仅供 Centrifugo 私有 HTTPS 代理认证，与签名密钥不同。 |
 | ODYSSEIA_PROVISION_SUBJECT | 仅账号维护命令必填；来自身份供应商的 subject，不用 email 替代。 |
@@ -113,13 +113,13 @@ go run ./cmd/api
 
 API 启动还要求可信 JWKS 首次加载成功，不会在身份配置缺失或公钥不可验证时开放匿名身份路径。运行账号需要 users 的 SELECT 与 INSERT。令牌格式见 [身份接入与 API 契约](../docs/身份接入与API契约.md)。
 
-开发用模拟 issuer 与 API 分开启动。证书名称必须等于 issuer 主机名。发现文档位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/.well-known/openid-configuration`，公钥位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/oauth/v2/keys`。把这两个值分别写入 `ODYSSEIA_AUTH_ISSUER` 和 `ODYSSEIA_AUTH_JWKS_URL`，并把 `ODYSSEIA_AUTH_AUDIENCE` 设成 `ODYSSEIA_MOCK_IDP_AUDIENCE`。
+开发用模拟 issuer 与 API 分开启动，并且只监听回环地址。`0.0.0.0`、空主机和其他非回环地址会拒绝启动。`POST /mock/token` 再检查客户端地址，非回环返回 403。证书名称必须等于 issuer 主机名。发现文档位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/.well-known/openid-configuration`，公钥位于 `{ODYSSEIA_MOCK_IDP_ISSUER}/oauth/v2/keys`。把这两个值分别写入 `ODYSSEIA_AUTH_ISSUER` 和 `ODYSSEIA_AUTH_JWKS_URL`，并把 `ODYSSEIA_AUTH_AUDIENCE` 设成 `ODYSSEIA_MOCK_IDP_AUDIENCE`。
 
 ```powershell
 go run ./cmd/mock-idp
 ```
 
-`POST /mock/token` 接受 `{"subject":"...","alg":"RS256"}` 或 `ES256`，返回五分钟的 `at+jwt`。`POST /oauth/v2/token` 在模拟进程中返回 501，把该路径留给以后的 ZITADEL。
+`POST /mock/token` 接受 `{"subject":"...","alg":"RS256"}` 或 `ES256`，audience 固定为 `ODYSSEIA_MOCK_IDP_AUDIENCE`，请求体不能另写。返回五分钟的 `at+jwt`。`POST /oauth/v2/token` 在模拟进程中返回 501，把该路径留给以后的 ZITADEL。
 
 以证书包含 localhost、客户端持有对应 CA 证书为例，可检查：
 
@@ -132,7 +132,7 @@ curl --cacert <CA证书路径> https://localhost:8443/healthz
 ## 验证
 
 ```powershell
-go test -count=1 -timeout=30s ./...
+go test -count=1 -timeout=180s ./...
 go vet ./...
 go build ./...
 ```

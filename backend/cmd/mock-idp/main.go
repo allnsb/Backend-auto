@@ -35,8 +35,8 @@ func run(ctx context.Context) error {
 	if certFile == "" || keyFile == "" {
 		return errors.New("ODYSSEIA_MOCK_IDP_TLS_CERT_FILE and ODYSSEIA_MOCK_IDP_TLS_KEY_FILE are required")
 	}
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		return fmt.Errorf("ODYSSEIA_MOCK_IDP_ADDR: %w", err)
+	if err := mockidp.RequireLoopbackListen(addr); err != nil {
+		return err
 	}
 	idp, err := mockidp.New(issuer)
 	if err != nil {
