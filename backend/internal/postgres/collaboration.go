@@ -156,12 +156,9 @@ func (s *Collaboration) SetMemberRole(ctx context.Context, actorID, forumID, use
 		if err != nil {
 			return err
 		}
-		current, err := memberRole(ctx, tx, forumID, userID)
+		target, _, err := requireForumMember(ctx, tx, forumID, userID)
 		if err != nil {
 			return err
-		}
-		if !identity.Below(actor.Priority, current.Priority) {
-			return forum.ErrForbidden
 		}
 		next, err := groupByID(ctx, tx, roleID)
 		if err != nil {
@@ -172,6 +169,9 @@ func (s *Collaboration) SetMemberRole(ctx context.Context, actorID, forumID, use
 		}
 		if err := requireRemainingManager(ctx, tx, forumID, userID, next.ID, false); err != nil {
 			return err
+		}
+		if !identity.Below(actor.Priority, target.Priority) {
+			return forum.ErrForbidden
 		}
 		err = tx.QueryRow(ctx, `UPDATE odysseia.forum_members m
 			SET role_id = g.id
@@ -206,15 +206,15 @@ func (s *Collaboration) RemoveMember(ctx context.Context, actorID, forumID, user
 		if err != nil {
 			return err
 		}
-		current, err := memberRole(ctx, tx, forumID, userID)
+		target, _, err := requireForumMember(ctx, tx, forumID, userID)
 		if err != nil {
 			return err
 		}
-		if !identity.Below(actor.Priority, current.Priority) {
-			return forum.ErrForbidden
-		}
 		if err := requireRemainingManager(ctx, tx, forumID, userID, identity.MemberGroupID, true); err != nil {
 			return err
+		}
+		if !identity.Below(actor.Priority, target.Priority) {
+			return forum.ErrForbidden
 		}
 		tag, err := tx.Exec(ctx, `DELETE FROM odysseia.forum_members WHERE forum_id=$1 AND user_id=$2`, forumID, userID)
 		if err != nil {
@@ -349,18 +349,6 @@ func groupByID(ctx context.Context, tx pgx.Tx, groupID string) (identity.Group, 
 	return group, err
 }
 
-func memberRole(ctx context.Context, tx pgx.Tx, forumID, userID string) (identity.Group, error) {
-	group, err := scanGroup(tx.QueryRow(ctx, `SELECT g.id::text, g.name, g.priority, g.can_read, g.can_post, g.can_delete,
-		g.can_manage_members, g.can_manage_groups
-		FROM odysseia.forum_members m
-		JOIN odysseia.identity_groups g ON g.id = m.role_id
-		WHERE m.forum_id=$1 AND m.user_id=$2`, forumID, userID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return identity.Group{}, forum.ErrNotFound
-	}
-	return group, err
-}
-
 func scanGroup(row pgx.Row) (identity.Group, error) {
 	var group identity.Group
 	var read, post, delete, manageMembers, manageGroups bool
@@ -373,8 +361,7 @@ func scanGroup(row pgx.Row) (identity.Group, error) {
 }
 
 // requireRemainingManager keeps at least one member whose winning role grants
-// manage_members. The stored forum role is what staff compare for hierarchy;
-// catalog groups still count here so a catalog owner remains a manager.
+// manage_members. Hierarchy uses that same winning priority for the target.
 func requireRemainingManager(ctx context.Context, tx pgx.Tx, forumID, userID, nextRoleID string, remove bool) error {
 	var managers int
 	err := tx.QueryRow(ctx, `SELECT count(*) FROM odysseia.forum_members m

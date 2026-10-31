@@ -371,7 +371,7 @@
     "/v1/forums/{forum_id}/members/{user_id}": {
       "delete": {
         "operationId": "removeForumMember",
-        "description": "Removes a forum member, records the removal and enqueues a realtime disconnect in the same transaction. Requires manage_members. The target's stored forum role must be strictly below the caller's effective priority. The change is rejected when it would leave the forum with no member whose winning role grants manage_members. The maintenance command remains available for audited operator retries.",
+        "description": "Removes a forum member, records the removal and enqueues a realtime disconnect in the same transaction. Requires manage_members. The target's effective priority (highest of catalog groups and the stored forum role) must be strictly below the caller's effective priority. The change is rejected when it would leave the forum with no member whose winning role grants manage_members. The maintenance command remains available for audited operator retries.",
         "security": [
           {
             "accessToken": []
@@ -420,7 +420,7 @@
     "/v1/forums/{forum_id}/members/{user_id}/role": {
       "put": {
         "operationId": "setForumMemberRole",
-        "description": "Sets the single role stored on this forum membership. Requires manage_members. Both the member's current forum role and the new role must be strictly below the caller's effective priority. Demotion is rejected when the forum would have no remaining manager. Effective grants still follow the highest-priority applicable role, which may be a catalog assignment.",
+        "description": "Sets the single role stored on this forum membership. Requires manage_members. The new role, and the member's effective priority, must both be strictly below the caller's effective priority. Effective priority is the highest of catalog groups and the stored forum role, the same value GET permissions returns. Demotion is rejected when the forum would have no remaining manager.",
         "security": [
           {
             "accessToken": []
@@ -2293,7 +2293,7 @@
         }
       },
       "PermissionDenied": {
-        "description": "The caller lacks the required grant, or the forum role being assigned or edited is not strictly below the caller's effective priority.",
+        "description": "The caller lacks the required grant, or the role being granted or the target's effective priority is not strictly below the caller's effective priority.",
         "content": {
           "application/problem+json": {
             "schema": {

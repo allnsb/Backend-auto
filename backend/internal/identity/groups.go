@@ -41,8 +41,9 @@ func (g Group) Allows(grant string) bool {
 }
 
 // Below reports whether subjectPriority is strictly under actorPriority.
-// Staff may assign or change only a lower role. An equal role is out of reach,
-// so a moderator cannot grant or edit the owner role, including their own.
+// Member changes compare effective priorities: catalog groups and the stored
+// forum role, highest wins. A role being granted uses that role's own priority.
+// An equal priority is out of reach.
 func Below(actorPriority, subjectPriority int) bool {
 	return subjectPriority < actorPriority
 }

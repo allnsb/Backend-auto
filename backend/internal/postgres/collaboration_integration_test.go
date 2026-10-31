@@ -211,6 +211,24 @@ func testRoleCeiling(t *testing.T, ctx context.Context, migrationURL string, run
 	if _, err := store.RemoveMember(ctx, moderator.ID, board.ID, moderator.ID); !errors.Is(err, forum.ErrForbidden) {
 		t.Fatalf("remove self: %v", err)
 	}
+	patron, err := users.Ensure(ctx, identity.ExternalID{Issuer: "https://ceiling.example", Subject: "patron"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.forum_members (forum_id, user_id, role_id) VALUES ($1,$2,$3)`, board.ID, patron.ID, identity.MemberGroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1,$2)`, patron.ID, identity.OwnerGroupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RemoveMember(ctx, moderator.ID, board.ID, patron.ID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("remove catalog owner with member forum role: %v", err)
+	}
+	if _, err := store.SetMemberRole(ctx, moderator.ID, board.ID, patron.ID, identity.MemberGroupID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("retarget catalog owner: %v", err)
+	}
 	_, err = ownerPool.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1,$2)`, chief.ID, identity.OwnerGroupID)
 	if err != nil {
 		t.Fatal(err)
@@ -244,8 +262,8 @@ func testRoleCeiling(t *testing.T, ctx context.Context, migrationURL string, run
 	if _, err := store.RemoveMember(ctx, keeper.ID, solo.ID, keeper.ID); !errors.Is(err, forum.ErrLastManager) {
 		t.Fatalf("remove last manager: %v", err)
 	}
-	if _, err := store.SetMemberRole(ctx, keeper.ID, solo.ID, keeper.ID, identity.MemberGroupID); err != nil {
-		t.Fatalf("stored role can stay member while the catalog grant remains: %v", err)
+	if _, err := store.SetMemberRole(ctx, keeper.ID, solo.ID, keeper.ID, identity.MemberGroupID); !errors.Is(err, forum.ErrForbidden) {
+		t.Fatalf("keeper cannot edit a member at their own effective priority: %v", err)
 	}
 }
 
