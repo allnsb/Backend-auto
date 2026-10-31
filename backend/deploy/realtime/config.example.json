@@ -1,0 +1,82 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "http_server": {
+    "address": "127.0.0.1",
+    "port": 8000,
+    "tls": {
+      "enabled": true,
+      "cert_pem": "<TLS_CERT_FILE>",
+      "key_pem": "<TLS_KEY_FILE>"
+    }
+  },
+  "client": {
+    "token": {
+      "hmac_secret_key": "<ODYSSEIA_REALTIME_CONNECTION_SECRET>"
+    },
+    "disallow_anonymous_connection_tokens": true,
+    "expired_close_delay": "1s",
+    "allowed_origins": [
+      "https://localhost"
+    ]
+  },
+  "channel": {
+    "proxy": {
+      "subscribe": {
+        "endpoint": "https://localhost:8443/_internal/realtime/subscribe",
+        "timeout": "2s",
+        "http_headers": [],
+        "emulated_headers": [],
+        "http": {
+          "static_headers": {
+            "X-Odysseia-Proxy-Key": "<ODYSSEIA_REALTIME_PROXY_SECRET>"
+          },
+          "tls": {
+            "enabled": true,
+            "server_ca_pem": "<API_CA_FILE>"
+          }
+        }
+      }
+    },
+    "namespaces": [
+      {
+        "name": "forum",
+        "history_size": 64,
+        "history_ttl": "60s",
+        "force_recovery": true,
+        "force_positioning": true,
+        "subscribe_proxy_enabled": true
+      },
+      {
+        "name": "topic",
+        "history_size": 64,
+        "history_ttl": "60s",
+        "force_recovery": true,
+        "force_positioning": true,
+        "subscribe_proxy_enabled": true
+      },
+      {
+        "name": "channel",
+        "history_size": 64,
+        "history_ttl": "60s",
+        "force_recovery": true,
+        "force_positioning": true,
+        "subscribe_proxy_enabled": true
+      }
+    ]
+  },
+  "consumers": [
+    {
+      "enabled": true,
+      "name": "odysseia_outbox",
+      "type": "postgresql",
+      "postgresql": {
+        "dsn": "postgresql://<consumer>:<password>@<verified-host>:5432/<database>?sslmode=verify-full&sslrootcert=<encoded-ca-path>",
+        "outbox_table_name": "odysseia.realtime_outbox",
+        "num_partitions": 5,
+        "partition_poll_interval": "20ms"
+      }
+    }
+  ]
+}

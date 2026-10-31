@@ -1,0 +1,12 @@
+{
+  "engine": {
+    "type": "redis",
+    "redis": {
+      "address": ["<VALKEY_CERTIFICATE_HOST>:6379"],
+      "user": "odysseia_realtime",
+      "password": "<VALKEY_PASSWORD>",
+      "prefix": "<SHARED_PROJECT_PREFIX>",
+      "tls": { "enabled": true, "server_ca_pem": "<VALKEY_CA_FILE>" }
+    }
+  }
+}

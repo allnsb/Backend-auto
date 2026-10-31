@@ -1,0 +1,32 @@
+# Overlay for deploy/postgres/compose.yaml. Paths resolve relative to that first file.
+services:
+  postgres:
+    volumes:
+      - ../../../runtime/backend-realtime/cluster/bootstrap.sql:/docker-entrypoint-initdb.d/02_cluster.sql:ro
+  valkey:
+    image: ghcr.io/valkey-io/valkey@sha256:b94f4063db6015ab2fd39a764c241a107aa176c5e7801742af81f4f8f3cb532a
+    platform: linux/amd64
+    user: "10001:10001"
+    read_only: true
+    ports:
+      - "127.0.0.1::6379"
+    entrypoint: ["/bin/sh", "/fixtures/start.sh"]
+    volumes:
+      - ../realtime/start-valkey.sh:/fixtures/start.sh:ro
+      - ../realtime/health-valkey.sh:/fixtures/health.sh:ro
+      - ../../../runtime/backend-postgres/tls/server.crt:/fixtures/server.crt:ro
+      - ../../../runtime/backend-postgres/tls/server.key:/fixtures/server.key:ro
+      - ../../../runtime/backend-postgres/tls/ca.crt:/fixtures/ca.crt:ro
+      - ../../../runtime/backend-realtime/cluster/users.acl:/fixtures/users.acl:ro
+    secrets:
+      - valkey_password
+    tmpfs:
+      - /data:uid=10001,gid=10001,mode=0700
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/fixtures/health.sh"]
+      interval: 1s
+      timeout: 3s
+      retries: 20
+secrets:
+  valkey_password:
+    file: ../../../runtime/backend-realtime/cluster/valkey-password

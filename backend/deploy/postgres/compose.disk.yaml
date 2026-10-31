@@ -1,0 +1,10 @@
+# Performance-only disk-backed fixture. Its new Docker volume is removed by
+# test.ps1 after the run; no application or historical candidate data is reused.
+services:
+  postgres:
+    tmpfs: !reset []
+    volumes:
+      - performance_data:/var/lib/postgresql
+
+volumes:
+  performance_data:

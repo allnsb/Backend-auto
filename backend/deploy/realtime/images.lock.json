@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-10-29",
+  "purpose": "Isolated shared broker for two native Centrifugo processes",
+  "image": "ghcr.io/valkey-io/valkey",
+  "release_tag": "9.1.3",
+  "platform": "linux/amd64",
+  "manifest_digest": "sha256:b94f4063db6015ab2fd39a764c241a107aa176c5e7801742af81f4f8f3cb532a",
+  "verified_image_id": "sha256:73c18bbc52a293133732c020f09e16aed862ee30885cb1dba5ad52c1b973d5ac",
+  "publisher_source": "https://github.com/valkey-io/valkey-container",
+  "release_source": "https://github.com/valkey-io/valkey/releases/tag/9.1.3",
+  "license": "BSD-3-Clause; see pinned upstream COPYING for bundled notices",
+  "download": "Official GHCR platform digest; Docker Hub direct manifest request timed out. No third-party image substitution.",
+  "verification": "Official GHCR amd64 descriptor matched docker pull digest and local image ID."
+}

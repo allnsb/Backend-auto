@@ -1,0 +1,13 @@
+{
+  "recorded_on": "2026-10-28",
+  "purpose": "Isolated PostgreSQL TLS integration fixture",
+  "image": "postgres",
+  "release_tag": "18.6",
+  "platform": "linux/amd64",
+  "index_digest": "sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4",
+  "manifest_digest": "sha256:f4b419e350fd98d4a8429603295208976dea4c8fb8326d818d346d3e29f1db6f",
+  "verified_image_id": "sha256:a1be1c8380f5c8ca80b4ad72f6be191f8a283e0ecb2e9496b1ee67dc0022d0f1",
+  "official_metadata": "https://github.com/docker-library/repo-info/blob/master/repos/postgres/remote/18.6.md",
+  "download_source": "docker.io/library/postgres",
+  "runtime_verification": "docker image inspect matched the official linux/amd64 image ID on 2026-10-28"
+}

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
+    ports:
+      - "127.0.0.1::5432"
+    environment:
+      POSTGRES_DB: odysseia_test
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    secrets:
+      - admin_password
+    entrypoint: ["/bin/sh", "/fixtures/start.sh"]
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_min_protocol_version=TLSv1.3
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/tls/server.key
+      - -c
+      - hba_file=/fixtures/pg_hba.conf
+    volumes:
+      - ./start.sh:/fixtures/start.sh:ro
+      - ./pg_hba.conf:/fixtures/pg_hba.conf:ro
+      - ../../../runtime/backend-postgres/tls/server.crt:/fixtures/server.crt:ro
+      - ../../../runtime/backend-postgres/tls/server.key:/fixtures/server.key:ro
+      - ../../../runtime/backend-postgres/bootstrap.sql:/docker-entrypoint-initdb.d/01_roles.sql:ro
+    tmpfs:
+      - /var/lib/postgresql:rw,mode=0700
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "odysseia_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+secrets:
+  admin_password:
+    file: ../../../runtime/backend-postgres/admin-password

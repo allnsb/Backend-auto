@@ -1,0 +1,49 @@
+diff --git a/internal/postgres/forum.go b/internal/postgres/forum.go
+--- a/internal/postgres/forum.go
++++ b/internal/postgres/forum.go
+@@ -16,9 +16,19 @@ import (
+ 	"odysseia.local/backend/internal/message"
+ )
+ 
+-type Forums struct{ pool *pgxpool.Pool }
++type Forums struct {
++	pool   *pgxpool.Pool
++	writes *writeAdmission
++}
+ 
+-func NewForums(pool *pgxpool.Pool) *Forums { return &Forums{pool: pool} }
++func NewForums(pool *pgxpool.Pool) *Forums {
++	// The remaining transaction connections can serve identity and reads.
++	// A one-connection pool has no reserve; this is a per-instance budget.
++	poolLimit := pool.Config().MaxConns
++	readReserve := max(int32(1), poolLimit/4)
++	writers := max(int64(1), int64(poolLimit-readReserve))
++	return &Forums{pool: pool, writes: newWriteAdmission(writers, forumWriteQueueLimit)}
++}
+ 
+ const topicColumns = `t.id::text, t.forum_id::text, t.position, t.author_id::text, t.title, t.mode, t.created_at`
+ const entryColumns = `m.id::text, m.stream_id::text, m.position, m.author_id::text, m.body,
+@@ -91,6 +101,11 @@ func (s *Forums) CreateTopic(ctx context.Context, actor, forumID, requestID stri
+ 	if err != nil {
+ 		return forum.CreatedTopic{}, err
+ 	}
++	release, err := s.writes.acquire(ctx)
++	if err != nil {
++		return forum.CreatedTopic{}, err
++	}
++	defer release()
+ 	var result forum.CreatedTopic
+ 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+ 		var id string
+@@ -139,6 +154,11 @@ func (s *Forums) Reply(ctx context.Context, actor, topicID, requestID string, dr
+ 	if err != nil {
+ 		return forum.Entry{}, err
+ 	}
++	release, err := s.writes.acquire(ctx)
++	if err != nil {
++		return forum.Entry{}, err
++	}
++	defer release()
+ 	var result forum.Entry
+ 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+ 		var id string

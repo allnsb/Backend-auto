@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "retrieved_on": "2026-10-26",
+  "timezone": "Asia/Shanghai",
+  "scope": "Fixed upstream source revisions. Keep BBS-GO as the content foundation; replace OpenIM with MongooseIM or Tinode after parallel isolated trials. Final IM selection and business integration are pending. Runtime results and image identity are recorded separately.",
+  "repositories": [
+    {
+      "name": "bbs-go",
+      "role": "content-foundation",
+      "path": "services/bbs-go",
+      "origin": "https://github.com/mlogclub/bbs-go.git",
+      "ref": "refs/tags/v4.4.6",
+      "commit": "7745195925f2094d1f37a1d7bbf13837fa948898",
+      "tag_object_type": "commit",
+      "checkout": "detached-head",
+      "shallow": true,
+      "clone_depth": 1,
+      "tracked_files": 980,
+      "go_directive": "1.26.0",
+      "license_file": "services/bbs-go/LICENSE",
+      "verification": {
+        "tag_resolves_to_head": true,
+        "working_tree_clean": true,
+        "git_fsck": "passed"
+      }
+    },
+    {
+      "name": "open-im-server",
+      "role": "retained-reference; replacement-direction-confirmed",
+      "path": "services/open-im-server",
+      "origin": "https://github.com/openimsdk/open-im-server.git",
+      "ref": "refs/tags/v3.8.3-patch.18",
+      "commit": "120cee6d5783959a02ea1acfa414589fe5aae90f",
+      "tag_object_type": "tag",
+      "checkout": "detached-head",
+      "shallow": true,
+      "clone_depth": 1,
+      "tracked_files": 761,
+      "go_directive": "1.25.0",
+      "license_file": "services/open-im-server/LICENSE",
+      "verification": {
+        "tag_resolves_to_head": true,
+        "working_tree_clean": true,
+        "git_fsck": "passed"
+      }
+    },
+    {
+      "name": "mongooseim",
+      "role": "parallel-im-trial-candidate; not-finally-selected",
+      "path": "services/mongooseim",
+      "origin": "https://github.com/esl/MongooseIM.git",
+      "ref": "refs/tags/6.10.0",
+      "commit": "872cfdb8bc8512aa495a10ff54e52a3c5e09b5db",
+      "tag_object_type": "commit",
+      "shallow": true,
+      "tracked_files": 1412,
+      "license_file": "services/mongooseim/COPYING",
+      "verification": {
+        "tag_resolves_to_head": true,
+        "working_tree_clean": true,
+        "git_fsck": "not_run"
+      }
+    },
+    {
+      "name": "tinode",
+      "role": "parallel-im-trial-candidate; not-finally-selected",
+      "path": "services/tinode",
+      "origin": "https://github.com/tinode/chat.git",
+      "ref": "refs/tags/v0.25.3",
+      "commit": "22a7c18e9cd695e9a061bf1b8c84175196ef5a15",
+      "tag_object_type": "commit",
+      "shallow": true,
+      "tracked_files": 258,
+      "go_directive": "1.26.0",
+      "license_file": "services/tinode/LICENSE",
+      "verification": {
+        "tag_resolves_to_head": true,
+        "working_tree_clean": true,
+        "git_fsck": "not_run"
+      }
+    }
+  ]
+}
+

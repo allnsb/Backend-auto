@@ -1,0 +1,2659 @@
+{
+  "date": "2026-10-29",
+  "timezone": "Asia/Taipei",
+  "method": "sequential A1,A2,A3,B1,B2,B3; closed-loop API load; separate sequential write probes after each load run",
+  "code": [
+    {
+      "file": "internal/postgres/forum.go",
+      "before_sha256": "67586d4190e87c2640a9eb80df100610e169ced5cb44f7dbbf04a440920f09b6",
+      "after_sha256": "21350f7ca3b9f04f427c95260dbfdefa460527db4f8ae79ea10fc0afd00c16ed"
+    },
+    {
+      "file": "internal/postgres/forum_events.go",
+      "before_sha256": "ff3a6aeb830ee2b25ea3f9f7e768add15cef085ea8c8646a58332072340898da",
+      "after_sha256": "b62851f3a3f7b467b42206f3ebfb6b0de0379d79b4273f20f53fa47754dc8752"
+    }
+  ],
+  "runs": [
+    {
+      "phase": "before",
+      "iteration": 1,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.2043822,
+          "requests_per_second": 277.6088142575223,
+          "p50_ms": 3.418,
+          "p95_ms": 4.285,
+          "p99_ms": 6.0688,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8452114,
+          "requests_per_second": 1083.8866484349708,
+          "p50_ms": 7.1087,
+          "p95_ms": 10.3261,
+          "p99_ms": 11.9021,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.4575067,
+          "requests_per_second": 1372.2063850546965,
+          "p50_ms": 23.2026,
+          "p95_ms": 28.5429,
+          "p99_ms": 31.5447,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 5974,
+          "pool_wait_ms": 16819.7248
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 6.4784777,
+          "requests_per_second": 308.7144993954367,
+          "p50_ms": 3.1627,
+          "p95_ms": 4.1623,
+          "p99_ms": 5.138,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8800129,
+          "requests_per_second": 1063.8224876010158,
+          "p50_ms": 7.1774,
+          "p95_ms": 10.5773,
+          "p99_ms": 11.9032,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.4972009,
+          "requests_per_second": 1335.8260738421945,
+          "p50_ms": 23.8141,
+          "p95_ms": 28.9015,
+          "p99_ms": 31.6289,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 5970,
+          "pool_wait_ms": 17753.695
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.4543557,
+          "requests_per_second": 173.69375134124144,
+          "p50_ms": 5.7813,
+          "p95_ms": 6.3145,
+          "p99_ms": 6.5082,
+          "mean_response_bytes": 1245.8966666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.5835618,
+          "requests_per_second": 1028.16873894076,
+          "p50_ms": 7.557,
+          "p95_ms": 9.0259,
+          "p99_ms": 10.5276,
+          "mean_response_bytes": 1245.885,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.3695936,
+          "requests_per_second": 1623.404734281113,
+          "p50_ms": 19.1367,
+          "p95_ms": 22.7134,
+          "p99_ms": 24.3342,
+          "mean_response_bytes": 1245.8833333333334,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 5255.3663
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.5687023,
+          "requests_per_second": 168.12834177846665,
+          "p50_ms": 5.8118,
+          "p95_ms": 6.4997,
+          "p99_ms": 8.1006,
+          "mean_response_bytes": 1247.8866666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.5119826,
+          "requests_per_second": 238.85515767505714,
+          "p50_ms": 12.663,
+          "p95_ms": 50.7692,
+          "p99_ms": 577.1291,
+          "mean_response_bytes": 1247.89,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.3601807,
+          "requests_per_second": 254.21782323700893,
+          "p50_ms": 79.7419,
+          "p95_ms": 239.6221,
+          "p99_ms": 271.4548,
+          "mean_response_bytes": 1247.8733333333332,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 36022.1262
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2308,
+          "lock_to_commit_ms": 4.1751
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.8995,
+          "lock_to_commit_ms": 3.8489
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2538,
+          "lock_to_commit_ms": 3.6747
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2419,
+          "lock_to_commit_ms": 3.663
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.29,
+          "lock_to_commit_ms": 4.2355
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7953,
+          "lock_to_commit_ms": 3.7492
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7337,
+          "lock_to_commit_ms": 3.686
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.6499,
+          "lock_to_commit_ms": 3.5981
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.6688,
+          "lock_to_commit_ms": 3.4501
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.6245,
+          "lock_to_commit_ms": 3.4854
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 3.8002,
+          "lock_to_commit_ms": 3.2781
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.6912,
+          "lock_to_commit_ms": 3.765
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7333,
+          "lock_to_commit_ms": 3.1544
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2362,
+          "lock_to_commit_ms": 3.679
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.8184,
+          "lock_to_commit_ms": 3.771
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7625,
+          "lock_to_commit_ms": 3.7107
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.81,
+          "lock_to_commit_ms": 4.7166
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.2107,
+          "lock_to_commit_ms": 4.1622
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8368,
+          "lock_to_commit_ms": 4.7764
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8157,
+          "lock_to_commit_ms": 4.7638
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7784,
+          "lock_to_commit_ms": 4.7207
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.4855,
+          "lock_to_commit_ms": 4.4324
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7667,
+          "lock_to_commit_ms": 4.7188
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.2282,
+          "lock_to_commit_ms": 4.1753
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8302,
+          "lock_to_commit_ms": 4.7789
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.2457,
+          "lock_to_commit_ms": 4.1933
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7632,
+          "lock_to_commit_ms": 4.712
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7947,
+          "lock_to_commit_ms": 4.6993
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.2193,
+          "lock_to_commit_ms": 4.1752
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7958,
+          "lock_to_commit_ms": 4.7474
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.297,
+          "lock_to_commit_ms": 4.242
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.865,
+          "lock_to_commit_ms": 4.8068
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "iteration": 2,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 8.7870514,
+          "requests_per_second": 227.60763639097414,
+          "p50_ms": 3.7073,
+          "p95_ms": 6.4511,
+          "p99_ms": 20.6528,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8260186,
+          "requests_per_second": 1095.2790951855584,
+          "p50_ms": 7.018,
+          "p95_ms": 10.0848,
+          "p99_ms": 11.4998,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.4690918,
+          "requests_per_second": 1361.385313021283,
+          "p50_ms": 23.0519,
+          "p95_ms": 29.2996,
+          "p99_ms": 32.838,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 5983,
+          "pool_wait_ms": 17183.6289
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 6.248016,
+          "requests_per_second": 320.1016130560485,
+          "p50_ms": 3.1515,
+          "p95_ms": 3.7455,
+          "p99_ms": 4.9062,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.7924642,
+          "requests_per_second": 1115.782396100296,
+          "p50_ms": 6.8734,
+          "p95_ms": 9.8787,
+          "p99_ms": 11.2118,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5830440000000001,
+          "requests_per_second": 1263.388762409636,
+          "p50_ms": 24.8782,
+          "p95_ms": 32.4613,
+          "p99_ms": 37.305,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 5978,
+          "pool_wait_ms": 19343.4502
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.820633,
+          "requests_per_second": 157.04203989234244,
+          "p50_ms": 6.3011,
+          "p95_ms": 7.964,
+          "p99_ms": 10.1553,
+          "mean_response_bytes": 1245.8733333333332,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.8826836,
+          "requests_per_second": 679.745267726737,
+          "p50_ms": 11.5868,
+          "p95_ms": 13.8723,
+          "p99_ms": 15.2826,
+          "mean_response_bytes": 1245.8883333333333,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.4945831,
+          "requests_per_second": 1213.1429480708096,
+          "p50_ms": 23.7566,
+          "p95_ms": 36.9476,
+          "p99_ms": 41.31,
+          "mean_response_bytes": 1245.88,
+          "pool_empty_acquires": 1174,
+          "pool_wait_ms": 7072.3618
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 4.2561504,
+          "requests_per_second": 140.97246187540742,
+          "p50_ms": 6.5323,
+          "p95_ms": 10.1357,
+          "p99_ms": 13.4457,
+          "mean_response_bytes": 1247.9016666666666,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.4596839,
+          "requests_per_second": 243.93378352397232,
+          "p50_ms": 12.4449,
+          "p95_ms": 41.2146,
+          "p99_ms": 535.6755,
+          "mean_response_bytes": 1247.89,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.4436413,
+          "requests_per_second": 245.5352182826506,
+          "p50_ms": 78.0803,
+          "p95_ms": 399.1622,
+          "p99_ms": 467.3934,
+          "mean_response_bytes": 1247.885,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 37284.4002
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.3312,
+          "lock_to_commit_ms": 4.2701
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.4196,
+          "lock_to_commit_ms": 4.2307
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.8588,
+          "lock_to_commit_ms": 4.2852
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.8718,
+          "lock_to_commit_ms": 4.2694
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2737,
+          "lock_to_commit_ms": 3.6892
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2774,
+          "lock_to_commit_ms": 3.6961
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.8377,
+          "lock_to_commit_ms": 3.7927
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.276,
+          "lock_to_commit_ms": 4.225
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7431,
+          "lock_to_commit_ms": 3.6899
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.3255,
+          "lock_to_commit_ms": 3.7373
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2765,
+          "lock_to_commit_ms": 3.696
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2768,
+          "lock_to_commit_ms": 3.6849
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2494,
+          "lock_to_commit_ms": 4.1931
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7908,
+          "lock_to_commit_ms": 3.7165
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.9186,
+          "lock_to_commit_ms": 3.8024
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.3055,
+          "lock_to_commit_ms": 4.2532
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.941,
+          "lock_to_commit_ms": 4.8868
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8003,
+          "lock_to_commit_ms": 4.754
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3259,
+          "lock_to_commit_ms": 5.2555
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8538,
+          "lock_to_commit_ms": 4.7971
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.336,
+          "lock_to_commit_ms": 5.284
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.4054,
+          "lock_to_commit_ms": 5.3456
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8551,
+          "lock_to_commit_ms": 4.7914
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7956,
+          "lock_to_commit_ms": 4.7456
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8845,
+          "lock_to_commit_ms": 4.8338
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3217,
+          "lock_to_commit_ms": 4.7431
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3364,
+          "lock_to_commit_ms": 5.2762
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7325,
+          "lock_to_commit_ms": 4.6283
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8213,
+          "lock_to_commit_ms": 4.2638
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3878,
+          "lock_to_commit_ms": 5.3289
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.334,
+          "lock_to_commit_ms": 5.2808
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3269,
+          "lock_to_commit_ms": 5.2791
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "iteration": 3,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.2493581,
+          "requests_per_second": 275.886495385019,
+          "p50_ms": 3.6583,
+          "p95_ms": 4.4803,
+          "p99_ms": 5.6549,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.850812,
+          "requests_per_second": 1080.6067823204087,
+          "p50_ms": 7.1184,
+          "p95_ms": 10.1155,
+          "p99_ms": 11.6858,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5669692,
+          "requests_per_second": 1276.34927348923,
+          "p50_ms": 24.8033,
+          "p95_ms": 30.6498,
+          "p99_ms": 33.0475,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 5979,
+          "pool_wait_ms": 18759.2147
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.2694708,
+          "requests_per_second": 275.1231905354101,
+          "p50_ms": 3.6163,
+          "p95_ms": 4.8761,
+          "p99_ms": 5.7432,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.9779622,
+          "requests_per_second": 1011.1416689358372,
+          "p50_ms": 7.5735,
+          "p95_ms": 11.1614,
+          "p99_ms": 13.1901,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.7584062,
+          "requests_per_second": 1137.3936238395884,
+          "p50_ms": 27.6726,
+          "p95_ms": 35.376,
+          "p99_ms": 39.3129,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 5973,
+          "pool_wait_ms": 21927.4623
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.7991337,
+          "requests_per_second": 157.93074089495718,
+          "p50_ms": 6.3248,
+          "p95_ms": 6.9451,
+          "p99_ms": 7.9672,
+          "mean_response_bytes": 1245.9066666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.58052,
+          "requests_per_second": 1033.5561220974298,
+          "p50_ms": 7.552,
+          "p95_ms": 8.8276,
+          "p99_ms": 10.671,
+          "mean_response_bytes": 1245.8866666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.3953143,
+          "requests_per_second": 1517.7796502681538,
+          "p50_ms": 20.6802,
+          "p95_ms": 23.7494,
+          "p99_ms": 24.886,
+          "mean_response_bytes": 1245.8733333333332,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 5673.444
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.6356802,
+          "requests_per_second": 165.03101675444393,
+          "p50_ms": 5.8658,
+          "p95_ms": 6.6352,
+          "p99_ms": 7.9277,
+          "mean_response_bytes": 1247.9066666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.5915587,
+          "requests_per_second": 231.5208989863899,
+          "p50_ms": 12.8297,
+          "p95_ms": 46.9496,
+          "p99_ms": 581.6772,
+          "mean_response_bytes": 1247.8783333333333,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.4598679,
+          "requests_per_second": 243.9155370904267,
+          "p50_ms": 79.6835,
+          "p95_ms": 298.2733,
+          "p99_ms": 354.7112,
+          "mean_response_bytes": 1247.8583333333333,
+          "pool_empty_acquires": 1174,
+          "pool_wait_ms": 37583.5654
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.7869,
+          "lock_to_commit_ms": 4.1942
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.3568,
+          "lock_to_commit_ms": 4.2961
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2189,
+          "lock_to_commit_ms": 4.1712
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2485,
+          "lock_to_commit_ms": 4.1957
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.483,
+          "lock_to_commit_ms": 4.4343
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2205,
+          "lock_to_commit_ms": 4.1798
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7876,
+          "lock_to_commit_ms": 3.7372
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.327,
+          "lock_to_commit_ms": 3.6713
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.2491,
+          "lock_to_commit_ms": 4.1918
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.2628,
+          "lock_to_commit_ms": 3.1802
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.3637,
+          "lock_to_commit_ms": 3.7302
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 5.1728,
+          "lock_to_commit_ms": 4.0493
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.615,
+          "lock_to_commit_ms": 3.5431
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.8897,
+          "lock_to_commit_ms": 3.552
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7771,
+          "lock_to_commit_ms": 3.7226
+        },
+        {
+          "name": "reply",
+          "queries": 8,
+          "batches": 0,
+          "statements": 8,
+          "elapsed_ms": 4.7686,
+          "lock_to_commit_ms": 3.1979
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.4433,
+          "lock_to_commit_ms": 4.3926
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.3797,
+          "lock_to_commit_ms": 4.7983
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.276,
+          "lock_to_commit_ms": 4.2181
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7476,
+          "lock_to_commit_ms": 4.6911
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.9352,
+          "lock_to_commit_ms": 4.8614
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7617,
+          "lock_to_commit_ms": 4.7061
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 6.2896,
+          "lock_to_commit_ms": 5.214
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.969,
+          "lock_to_commit_ms": 4.8254
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.305,
+          "lock_to_commit_ms": 4.2335
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8218,
+          "lock_to_commit_ms": 4.2421
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7797,
+          "lock_to_commit_ms": 4.1783
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7875,
+          "lock_to_commit_ms": 4.7349
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.5464,
+          "lock_to_commit_ms": 4.5224
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.7417,
+          "lock_to_commit_ms": 4.6887
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.2289,
+          "lock_to_commit_ms": 4.1909
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 9,
+          "batches": 0,
+          "statements": 9,
+          "elapsed_ms": 5.8656,
+          "lock_to_commit_ms": 4.2085
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "iteration": 1,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.8184438,
+          "requests_per_second": 255.8053816285026,
+          "p50_ms": 3.7156,
+          "p95_ms": 4.8419,
+          "p99_ms": 6.367,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.9723459,
+          "requests_per_second": 1014.0209179333098,
+          "p50_ms": 7.6056,
+          "p95_ms": 10.6972,
+          "p99_ms": 12.196,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.6187643,
+          "requests_per_second": 1235.510321051681,
+          "p50_ms": 25.5298,
+          "p95_ms": 32.2797,
+          "p99_ms": 36.964,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 5946,
+          "pool_wait_ms": 19462.0201
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 6.9282668,
+          "requests_per_second": 288.6724858805957,
+          "p50_ms": 3.2408,
+          "p95_ms": 4.3285,
+          "p99_ms": 5.5127,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.9165136,
+          "requests_per_second": 1043.5616006064345,
+          "p50_ms": 7.2934,
+          "p95_ms": 10.6828,
+          "p99_ms": 12.6298,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5718804,
+          "requests_per_second": 1272.3614341141986,
+          "p50_ms": 24.9557,
+          "p95_ms": 30.6053,
+          "p99_ms": 33.2039,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 5978,
+          "pool_wait_ms": 19139.5583
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.121893,
+          "requests_per_second": 192.19108406341923,
+          "p50_ms": 5.2603,
+          "p95_ms": 5.9006,
+          "p99_ms": 6.4191,
+          "mean_response_bytes": 1245.895,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.5391609,
+          "requests_per_second": 1112.8403413526462,
+          "p50_ms": 7.0273,
+          "p95_ms": 8.1803,
+          "p99_ms": 9.2733,
+          "mean_response_bytes": 1245.8966666666668,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.3348235,
+          "requests_per_second": 1791.9889135619214,
+          "p50_ms": 17.4006,
+          "p95_ms": 21.1349,
+          "p99_ms": 23.094,
+          "mean_response_bytes": 1245.895,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 4739.261
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.0376603,
+          "requests_per_second": 197.52044032046638,
+          "p50_ms": 5.0226,
+          "p95_ms": 5.7701,
+          "p99_ms": 6.0808,
+          "mean_response_bytes": 1247.9033333333334,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 1.8297744,
+          "requests_per_second": 327.90927668460114,
+          "p50_ms": 9.2687,
+          "p95_ms": 43.6726,
+          "p99_ms": 409.1132,
+          "mean_response_bytes": 1247.8783333333333,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 1.8417655000000002,
+          "requests_per_second": 325.77437247032805,
+          "p50_ms": 67.3491,
+          "p95_ms": 164.2489,
+          "p99_ms": 177.3685,
+          "mean_response_bytes": 1247.8933333333334,
+          "pool_empty_acquires": 1174,
+          "pool_wait_ms": 27973.7514
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.3806,
+          "lock_to_commit_ms": 3.3032
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.3119,
+          "lock_to_commit_ms": 2.6964
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2765,
+          "lock_to_commit_ms": 3.2016
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.351,
+          "lock_to_commit_ms": 3.292
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.4581,
+          "lock_to_commit_ms": 3.3763
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.239,
+          "lock_to_commit_ms": 3.1803
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2092,
+          "lock_to_commit_ms": 3.1542
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2802,
+          "lock_to_commit_ms": 3.2328
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.6965,
+          "lock_to_commit_ms": 2.6348
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.1989,
+          "lock_to_commit_ms": 2.6089
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.6736,
+          "lock_to_commit_ms": 2.6281
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.7222,
+          "lock_to_commit_ms": 2.6656
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.7147,
+          "lock_to_commit_ms": 3.137
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.235,
+          "lock_to_commit_ms": 2.6515
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.1913,
+          "lock_to_commit_ms": 3.1175
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2818,
+          "lock_to_commit_ms": 3.1226
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.6936,
+          "lock_to_commit_ms": 3.6462
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7139,
+          "lock_to_commit_ms": 3.6361
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.672,
+          "lock_to_commit_ms": 3.6311
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.1728,
+          "lock_to_commit_ms": 4.1372
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7455,
+          "lock_to_commit_ms": 3.7085
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.1903,
+          "lock_to_commit_ms": 3.6314
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.1513,
+          "lock_to_commit_ms": 3.1111
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7899,
+          "lock_to_commit_ms": 3.7536
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7002,
+          "lock_to_commit_ms": 3.6482
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7464,
+          "lock_to_commit_ms": 3.6971
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.3942,
+          "lock_to_commit_ms": 3.7844
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.039,
+          "lock_to_commit_ms": 3.79
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.4312,
+          "lock_to_commit_ms": 3.2743
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.84,
+          "lock_to_commit_ms": 3.7696
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.2541,
+          "lock_to_commit_ms": 4.203
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.2499,
+          "lock_to_commit_ms": 3.1896
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "iteration": 2,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.8396516,
+          "requests_per_second": 255.11337774244967,
+          "p50_ms": 3.6844,
+          "p95_ms": 5.1643,
+          "p99_ms": 12.5515,
+          "mean_response_bytes": 62381,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8979655,
+          "requests_per_second": 1053.7599339924777,
+          "p50_ms": 7.3515,
+          "p95_ms": 10.41,
+          "p99_ms": 11.8515,
+          "mean_response_bytes": 62381,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5077426,
+          "requests_per_second": 1326.486364449741,
+          "p50_ms": 24.0291,
+          "p95_ms": 28.787,
+          "p99_ms": 30.9942,
+          "mean_response_bytes": 62381,
+          "pool_empty_acquires": 5968,
+          "pool_wait_ms": 17894.5704
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 6.8274775,
+          "requests_per_second": 292.9339569409054,
+          "p50_ms": 3.2154,
+          "p95_ms": 4.2742,
+          "p99_ms": 5.3407,
+          "mean_response_bytes": 62543,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8508281,
+          "requests_per_second": 1080.597382328483,
+          "p50_ms": 7.0865,
+          "p95_ms": 10.2501,
+          "p99_ms": 12.0239,
+          "mean_response_bytes": 62543,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5285412,
+          "requests_per_second": 1308.4370902138587,
+          "p50_ms": 24.0816,
+          "p95_ms": 30.0351,
+          "p99_ms": 33.165,
+          "mean_response_bytes": 62543,
+          "pool_empty_acquires": 5978,
+          "pool_wait_ms": 18122.8814
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.9791048,
+          "requests_per_second": 201.4027838161316,
+          "p50_ms": 4.8197,
+          "p95_ms": 5.4493,
+          "p99_ms": 5.9711,
+          "mean_response_bytes": 1245.915,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.4856817,
+          "requests_per_second": 1235.3769969097045,
+          "p50_ms": 6.4116,
+          "p95_ms": 7.5869,
+          "p99_ms": 8.895,
+          "mean_response_bytes": 1245.88,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.3435961,
+          "requests_per_second": 1746.236351343918,
+          "p50_ms": 18.0108,
+          "p95_ms": 21.678,
+          "p99_ms": 22.7726,
+          "mean_response_bytes": 1245.89,
+          "pool_empty_acquires": 1173,
+          "pool_wait_ms": 4864.347
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.9771179,
+          "requests_per_second": 201.53719810693423,
+          "p50_ms": 4.7972,
+          "p95_ms": 5.4052,
+          "p99_ms": 6.1423,
+          "mean_response_bytes": 1247.885,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 1.7535261,
+          "requests_per_second": 342.16770426171587,
+          "p50_ms": 8.9453,
+          "p95_ms": 39.7171,
+          "p99_ms": 407.0147,
+          "mean_response_bytes": 1247.8933333333334,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 1.7945045,
+          "requests_per_second": 334.35413508297137,
+          "p50_ms": 110.007,
+          "p95_ms": 139.3128,
+          "p99_ms": 146.1483,
+          "mean_response_bytes": 1247.89,
+          "pool_empty_acquires": 1176,
+          "pool_wait_ms": 27341.5238
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.7159,
+          "lock_to_commit_ms": 3.1449
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.7154,
+          "lock_to_commit_ms": 3.1288
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.7097,
+          "lock_to_commit_ms": 2.6206
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2738,
+          "lock_to_commit_ms": 3.1625
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.1948,
+          "lock_to_commit_ms": 3.1444
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2249,
+          "lock_to_commit_ms": 2.6472
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2361,
+          "lock_to_commit_ms": 3.1946
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.1377,
+          "lock_to_commit_ms": 2.1007
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.66,
+          "lock_to_commit_ms": 2.1059
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2069,
+          "lock_to_commit_ms": 2.6328
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2282,
+          "lock_to_commit_ms": 3.1769
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.673,
+          "lock_to_commit_ms": 2.6227
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2167,
+          "lock_to_commit_ms": 2.6178
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.684,
+          "lock_to_commit_ms": 2.6222
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.7391,
+          "lock_to_commit_ms": 2.69
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.7131,
+          "lock_to_commit_ms": 2.6574
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.3596,
+          "lock_to_commit_ms": 4.2977
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.2148,
+          "lock_to_commit_ms": 3.1668
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7224,
+          "lock_to_commit_ms": 3.1463
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.5293,
+          "lock_to_commit_ms": 3.133
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7998,
+          "lock_to_commit_ms": 3.7417
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7777,
+          "lock_to_commit_ms": 3.7247
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.2368,
+          "lock_to_commit_ms": 3.1476
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 6.5427,
+          "lock_to_commit_ms": 5.4929
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.2336,
+          "lock_to_commit_ms": 4.168
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.2444,
+          "lock_to_commit_ms": 3.2052
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.8205,
+          "lock_to_commit_ms": 3.7723
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7363,
+          "lock_to_commit_ms": 3.6824
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.722,
+          "lock_to_commit_ms": 3.6711
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.7876,
+          "lock_to_commit_ms": 3.7282
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.9365,
+          "lock_to_commit_ms": 3.8815
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 4.1763,
+          "lock_to_commit_ms": 3.1269
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "iteration": 3,
+      "go_version": "go1.27.3",
+      "num_cpu": 16,
+      "gomaxprocs": 16,
+      "pool_max": 16,
+      "seed_messages": 28225,
+      "body_bytes": 1024,
+      "outbox_pending_before_probes": 4017,
+      "write_probe_requests": 34,
+      "results": [
+        {
+          "name": "history_first_50",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 7.835244,
+          "requests_per_second": 255.25688797949368,
+          "p50_ms": 3.7375,
+          "p95_ms": 4.8929,
+          "p99_ms": 6.0769,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.9268052,
+          "requests_per_second": 1037.9876491925597,
+          "p50_ms": 7.4451,
+          "p95_ms": 10.7452,
+          "p99_ms": 12.0864,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_first_50",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.506048,
+          "requests_per_second": 1327.9789223185448,
+          "p50_ms": 23.9242,
+          "p95_ms": 29.0461,
+          "p99_ms": 31.7163,
+          "mean_response_bytes": 62430,
+          "pool_empty_acquires": 5974,
+          "pool_wait_ms": 17790.2978
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 1,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 6.6967366,
+          "requests_per_second": 298.65292895049805,
+          "p50_ms": 3.2027,
+          "p95_ms": 4.2526,
+          "p99_ms": 5.2695,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 8,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.8250098000000001,
+          "requests_per_second": 1095.8845262091195,
+          "p50_ms": 7.0414,
+          "p95_ms": 10.2106,
+          "p99_ms": 11.6093,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "history_after_19000",
+          "concurrency": 32,
+          "requests": 2000,
+          "errors": 0,
+          "seconds": 1.5261585,
+          "requests_per_second": 1310.4798747967527,
+          "p50_ms": 24.0719,
+          "p95_ms": 30.5311,
+          "p99_ms": 33.2737,
+          "mean_response_bytes": 62593,
+          "pool_empty_acquires": 5960,
+          "pool_wait_ms": 18018.9797
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.7682848,
+          "requests_per_second": 159.2236340522882,
+          "p50_ms": 5.9939,
+          "p95_ms": 8.64,
+          "p99_ms": 9.714,
+          "mean_response_bytes": 1245.885,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.651531,
+          "requests_per_second": 920.9078309397404,
+          "p50_ms": 8.5655,
+          "p95_ms": 10.2863,
+          "p99_ms": 13.5727,
+          "mean_response_bytes": 1245.885,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_32_topics",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 0.5325703,
+          "requests_per_second": 1126.611829461763,
+          "p50_ms": 28.0261,
+          "p95_ms": 35.9764,
+          "p99_ms": 40.1603,
+          "mean_response_bytes": 1245.8966666666668,
+          "pool_empty_acquires": 1179,
+          "pool_wait_ms": 7733.941
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 1,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 3.8566947000000003,
+          "requests_per_second": 155.57363148293797,
+          "p50_ms": 6.244,
+          "p95_ms": 8.4621,
+          "p99_ms": 10.1549,
+          "mean_response_bytes": 1247.915,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 8,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.2448133,
+          "requests_per_second": 267.2828069933477,
+          "p50_ms": 11.2733,
+          "p95_ms": 41.2641,
+          "p99_ms": 311.3531,
+          "mean_response_bytes": 1247.885,
+          "pool_empty_acquires": 0,
+          "pool_wait_ms": 0
+        },
+        {
+          "name": "reply_one_hot_topic",
+          "concurrency": 32,
+          "requests": 600,
+          "errors": 0,
+          "seconds": 2.218874,
+          "requests_per_second": 270.40742286402923,
+          "p50_ms": 129.922,
+          "p95_ms": 161.1073,
+          "p99_ms": 170.7525,
+          "mean_response_bytes": 1247.8566666666666,
+          "pool_empty_acquires": 1175,
+          "pool_wait_ms": 33800.411
+        }
+      ],
+      "write_samples": [
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.9259,
+          "lock_to_commit_ms": 3.8505
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.8651,
+          "lock_to_commit_ms": 3.2407
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 5.9521,
+          "lock_to_commit_ms": 3.7852
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 5.091,
+          "lock_to_commit_ms": 3.3191
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.8256,
+          "lock_to_commit_ms": 3.223
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2756,
+          "lock_to_commit_ms": 3.2073
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.3772,
+          "lock_to_commit_ms": 3.2864
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.4275,
+          "lock_to_commit_ms": 3.3554
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.3107,
+          "lock_to_commit_ms": 3.2325
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2728,
+          "lock_to_commit_ms": 2.6459
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.8109,
+          "lock_to_commit_ms": 3.2302
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 3.6572,
+          "lock_to_commit_ms": 2.6062
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2163,
+          "lock_to_commit_ms": 2.6383
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.1939,
+          "lock_to_commit_ms": 3.145
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.2745,
+          "lock_to_commit_ms": 3.164
+        },
+        {
+          "name": "reply",
+          "queries": 5,
+          "batches": 1,
+          "statements": 7,
+          "elapsed_ms": 4.3086,
+          "lock_to_commit_ms": 3.153
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.3563,
+          "lock_to_commit_ms": 3.7022
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.2487,
+          "lock_to_commit_ms": 3.6857
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.6853,
+          "lock_to_commit_ms": 4.1046
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.8905,
+          "lock_to_commit_ms": 4.858
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 8.0138,
+          "lock_to_commit_ms": 6.3476
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.3284,
+          "lock_to_commit_ms": 4.2178
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.3303,
+          "lock_to_commit_ms": 3.7605
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 5.7956,
+          "lock_to_commit_ms": 4.2074
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 6.3287,
+          "lock_to_commit_ms": 4.759
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 7.5038,
+          "lock_to_commit_ms": 5.9045
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 7.4734,
+          "lock_to_commit_ms": 5.3104
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 6.3567,
+          "lock_to_commit_ms": 4.7395
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 6.9304,
+          "lock_to_commit_ms": 5.3524
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 9.8281,
+          "lock_to_commit_ms": 5.2789
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 7.4936,
+          "lock_to_commit_ms": 5.3267
+        },
+        {
+          "name": "quoted_reply",
+          "queries": 6,
+          "batches": 1,
+          "statements": 8,
+          "elapsed_ms": 6.8602,
+          "lock_to_commit_ms": 5.2489
+        }
+      ]
+    }
+  ]
+}

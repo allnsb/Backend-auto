@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-10-28",
+  "server": {
+    "version": "6.10.2",
+    "release": "https://github.com/centrifugal/centrifugo/releases/tag/v6.10.2",
+    "license": "Apache-2.0",
+    "asset": "centrifugo_6.10.2_windows_amd64.zip",
+    "sha256": "4dae106b01ba643266d325f139fec9fd19f1c2b09b23ad632e3e1c07aaa526ae",
+    "checksum_source": "https://github.com/centrifugal/centrifugo/releases/download/v6.10.2/centrifugo_6.10.2_checksums.txt"
+  },
+  "test_sdk": {
+    "module": "github.com/centrifugal/centrifuge-go",
+    "version": "v0.13.0",
+    "release": "https://github.com/centrifugal/centrifuge-go/releases/tag/v0.13.0",
+    "license": "MIT",
+    "usage": "integration tests only; not linked into API"
+  },
+  "deployment": "Local synthetic Windows integration only; no production image or capacity acceptance."
+}

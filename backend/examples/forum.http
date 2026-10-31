@@ -1,0 +1,69 @@
+# Set these in your request client's private environment. Do not save live tokens here.
+# On 503 write_capacity_exceeded, honor Retry-After and keep the original body/key.
+@API_BASE = https://localhost:8443
+@ACCESS_TOKEN = <trusted-access-token>
+@FORUM_ID = <provisioned-forum-uuid>
+@TOPIC_ID = <created-topic-uuid>
+@ROOT_ID = <root-message-uuid>
+@QUOTE_ID = <same-topic-message-uuid>
+@CREATE_REQUEST_ID = <new-uuid-reuse-on-retry>
+@REPLY_REQUEST_ID = <another-uuid-reuse-on-retry>
+
+### Current local identity
+GET {{API_BASE}}/v1/me
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### OpenAPI 3.2.1; info.version=0.4.5
+GET {{API_BASE}}/openapi.json
+
+### Independent member forum
+GET {{API_BASE}}/v1/forums/{{FORUM_ID}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### Create a threaded topic; copy topic.id to TOPIC_ID
+POST {{API_BASE}}/v1/forums/{{FORUM_ID}}/topics
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+Idempotency-Key: {{CREATE_REQUEST_ID}}
+
+{"title":"Independent forum fixture","body":"Opening message","mode":"threaded"}
+
+### Seek pagination; follow the opaque next value as the after query parameter
+GET {{API_BASE}}/v1/forums/{{FORUM_ID}}/topics?limit=37
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### Topic metadata
+GET {{API_BASE}}/v1/topics/{{TOPIC_ID}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### A root reply; omit root_id to create a root, copy its id to ROOT_ID
+POST {{API_BASE}}/v1/topics/{{TOPIC_ID}}/messages
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+Idempotency-Key: {{REPLY_REQUEST_ID}}
+
+{"body":"Root reply"}
+
+### Same-topic quote and one nested level; use a fresh request UUID
+POST {{API_BASE}}/v1/topics/{{TOPIC_ID}}/messages
+Authorization: Bearer {{ACCESS_TOKEN}}
+Content-Type: application/json
+Idempotency-Key: <new-uuid-for-this-different-request>
+
+{"body":"Reply with a precise message reference","root_id":"{{ROOT_ID}}","quote_id":"{{QUOTE_ID}}"}
+
+### Authorized history; position/sequence values are JSON strings
+GET {{API_BASE}}/v1/topics/{{TOPIC_ID}}/messages?limit=37
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### Bodyless POST; refresh this credential when requested by the SDK
+POST {{API_BASE}}/v1/realtime/connection-token
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### Bodyless POST returns a channel descriptor, not a subscription token
+POST {{API_BASE}}/v1/topics/{{TOPIC_ID}}/subscription
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### Forum-level topic-created events
+POST {{API_BASE}}/v1/forums/{{FORUM_ID}}/subscription
+Authorization: Bearer {{ACCESS_TOKEN}}

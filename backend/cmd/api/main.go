@@ -1,0 +1,67 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"odysseia.local/backend/internal/config"
+	"odysseia.local/backend/internal/httpapi"
+	"odysseia.local/backend/internal/postgres"
+	"odysseia.local/backend/internal/realtime"
+	"odysseia.local/backend/internal/tokenauth"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx); err != nil {
+		slog.Error("API stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	pool, err := postgres.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	verifier, err := tokenauth.New(ctx, tokenauth.Config{
+		Issuer: cfg.AuthIssuer, Audience: cfg.AuthAudience,
+		JWKSURL: cfg.AuthJWKSURL, CAFile: cfg.AuthCAFile,
+	})
+	if err != nil {
+		return err
+	}
+	tokens, err := realtime.NewSigner(cfg.RealtimeConnectionSecret, realtime.TokenTTL)
+	if err != nil {
+		return err
+	}
+	forums, err := postgres.NewCachedForums(pool, cfg.MaxWriteTransactions)
+	if err != nil {
+		return err
+	}
+	defer forums.Close()
+	api := httpapi.NewAPI(verifier.Authenticate, postgres.NewUsers(pool).Find)
+	api.RegisterForums(forums)
+	api.RegisterChannels(forums)
+	if err := api.RegisterRealtime(tokens, forums, cfg.RealtimeProxySecret); err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp", cfg.HTTPSAddr)
+	if err != nil {
+		return fmt.Errorf("listen for HTTPS: %w", err)
+	}
+	server := httpapi.NewServer(cfg.HTTPSAddr, pool.Ping, api)
+	return httpapi.ServeTLS(ctx, server, listener, cfg.TLSCertFile, cfg.TLSKeyFile)
+}
