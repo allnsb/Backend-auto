@@ -158,11 +158,18 @@ func (s *Forums) SendChannelMessage(ctx context.Context, actor, channelID, reque
 		if err := reply.ValidateReferences(state.references); err != nil {
 			return err
 		}
-		entry, err := appendStreamReply(ctx, tx, channelID, actor, reply, requestID, digest[:], channelMessageStream, state)
+		entry, err := s.appendStreamReply(ctx, tx, channelID, actor, reply, requestID, digest[:], channelMessageStream, state)
 		result = entry.Message
 		return err
 	})
-	return result, err
+	if err != nil {
+		return message.Message{}, err
+	}
+	shown := []message.Message{result}
+	if err := s.presentMessages(ctx, shown); err != nil {
+		return message.Message{}, err
+	}
+	return shown[0], nil
 }
 
 func scanChannel(row pgx.Row) (forum.Channel, error) {

@@ -1,6 +1,8 @@
-// Package blob is the object-storage seam for conversation attachments.
-// The first implementation streams bytes through the API into R2. A later
-// presigned PUT can satisfy the same interface without changing message binding.
+// Package blob is the object-storage seam.
+// Store is the private conversation bucket: short-lived presigned GET, no-store.
+// PublicStore is a separate bucket for content-addressed emoji: stable URLs and
+// immutable cache headers. A later presigned PUT can satisfy Store without
+// changing message binding.
 package blob
 
 import (

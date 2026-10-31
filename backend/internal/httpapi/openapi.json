@@ -2,8 +2,8 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.8.1",
-    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Connection JWTs grant identity only. Author and platform overrides, works, custom emoji, read receipts and production capacity remain separate stages."
+    "version": "0.9.0",
+    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Custom emoji are site-wide or per forum. Messages cite them as <:name:id> or <a:name:id>. Bytes live in a public bucket separate from conversation attachments, with a content-hash key and Cache-Control immutable. Deleting an emoji keeps the object and rewrites later reads of that token to :name:. Connection JWTs grant identity only. Author and platform overrides, works, read receipts and production capacity remain separate stages."
   },
   "servers": [
     {
@@ -2317,6 +2317,375 @@
           }
         }
       }
+    },
+    "/v1/emojis": {
+      "get": {
+        "operationId": "listSiteEmojis",
+        "description": "Live site emoji, ordered by name. Any authenticated user may list them. Cache-Control: no-store. The image URL is public and immutable.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Site emoji catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmojiPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSiteEmoji",
+        "description": "Upload one site emoji. Requires Idempotency-Key and a caller listed in ODYSSEIA_EMOJI_SITE_OWNER_IDS. The identity-catalog owner role is a forum role and is not this directory owner. The file is png, apng, gif, or webp. Animation is detected from the container; there is no resize. The object key contains the content hash and is stored in the public emoji bucket, not the conversation bucket.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped by the caller. Exact retries return the original emoji; a different file, name, or scope returns 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "file"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_]{2,32}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created emoji. Location is /v1/emojis/{id}.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmoji"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          }
+        }
+      }
+    },
+    "/v1/emojis/{emoji_id}": {
+      "get": {
+        "operationId": "getEmoji",
+        "description": "One live emoji. A forum emoji is visible only to a current member of that forum. A deleted emoji is not found.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "emoji_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Emoji metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmoji"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSiteEmoji",
+        "description": "Soft-delete a site emoji. The public object is kept because the key is content-addressed. Later message reads rewrite <:name:id> or <a:name:id> to :name:. Requires a directory owner.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "emoji_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted. Empty body."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/emojis": {
+      "get": {
+        "operationId": "listForumEmojis",
+        "description": "Live emoji for one forum. Non-members receive 404.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "forum_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Forum emoji catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmojiPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createForumEmoji",
+        "description": "Upload one forum emoji. The caller's effective forum role must be moderator or higher (priority >= 200, which includes owner). Same file rules as site emoji.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "forum_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Scoped by the caller. Exact retries return the original emoji; a different file, name, or scope returns 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "file"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_]{2,32}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created emoji.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomEmoji"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          }
+        }
+      }
+    },
+    "/v1/forums/{forum_id}/emojis/{emoji_id}": {
+      "delete": {
+        "operationId": "deleteForumEmoji",
+        "description": "Soft-delete one emoji that belongs to this forum. Moderator or higher. The object stays in the public bucket.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "forum_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "emoji_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted. Empty body."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/PermissionDenied"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2481,6 +2850,9 @@
               "idempotency_conflict",
               "invalid_reference",
               "invalid_input",
+              "invalid_emoji",
+              "emoji_name_taken",
+              "emoji_catalog_full",
               "attachment_rejected",
               "request_timeout"
             ]
@@ -2588,6 +2960,13 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "emojis": {
+            "type": "array",
+            "description": "Custom emoji still available in body, in first-seen order. A deleted emoji is omitted and its token in body is rewritten to :name:.",
+            "items": {
+              "$ref": "#/components/schemas/CustomEmoji"
+            }
           },
           "root_id": {
             "type": "string",
@@ -2862,9 +3241,94 @@
               "$ref": "#/components/schemas/Attachment"
             }
           },
+          "emojis": {
+            "type": "array",
+            "description": "Custom emoji still available in body, in first-seen order. A deleted emoji is omitted and its token in body is rewritten to :name:.",
+            "items": {
+              "$ref": "#/components/schemas/CustomEmoji"
+            }
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "CustomEmoji": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "animated",
+          "scope",
+          "content_type",
+          "url",
+          "width",
+          "height",
+          "bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]{2,32}$"
+          },
+          "animated": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "site",
+              "forum"
+            ]
+          },
+          "forum_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/gif",
+              "image/webp"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Stable public URL. The object key contains the content hash. Cache-Control on the object is public, max-age=31536000, immutable."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "EmojiPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomEmoji"
+            }
           }
         }
       },

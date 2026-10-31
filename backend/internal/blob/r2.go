@@ -34,6 +34,16 @@ type R2 struct {
 }
 
 func NewR2(ctx context.Context, cfg R2Config) (*R2, error) {
+	client, err := newS3Client(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &R2{client: client, presign: s3.NewPresignClient(client), bucket: cfg.Bucket}, nil
+}
+
+// newS3Client is shared by the private attachment bucket and the public emoji
+// bucket. Each caller passes its own bucket; cache policy is not shared.
+func newS3Client(ctx context.Context, cfg R2Config) (*s3.Client, error) {
 	if cfg.AccountID == "" || cfg.AccessKey == "" || cfg.SecretKey == "" || cfg.Bucket == "" {
 		return nil, errors.New("R2 account, credentials, and bucket are required")
 	}
@@ -52,15 +62,14 @@ func NewR2(ctx context.Context, cfg R2Config) (*R2, error) {
 	if err != nil {
 		return nil, fmt.Errorf("configure R2 client: %w", err)
 	}
-	client := s3.NewFromConfig(loaded, func(options *s3.Options) {
+	return s3.NewFromConfig(loaded, func(options *s3.Options) {
 		options.BaseEndpoint = aws.String(endpoint)
 		// service/s3 from v1.73 defaults to a CRC32 body checksum. R2 does not
 		// accept that optional header and can stall the upload. WHEN_REQUIRED
 		// keeps checksums only for operations that mandate one.
 		options.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		options.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
-	})
-	return &R2{client: client, presign: s3.NewPresignClient(client), bucket: cfg.Bucket}, nil
+	}), nil
 }
 
 func (r *R2) Put(ctx context.Context, object Object) error {

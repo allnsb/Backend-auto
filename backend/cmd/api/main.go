@@ -11,6 +11,7 @@ import (
 
 	"odysseia.local/backend/internal/blob"
 	"odysseia.local/backend/internal/config"
+	"odysseia.local/backend/internal/emoji"
 	"odysseia.local/backend/internal/httpapi"
 	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/postgres"
@@ -75,11 +76,23 @@ func run(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	emojiObjects, err := blob.NewPublicR2(ctx, blob.R2Config{
+		AccountID: cfg.EmojiR2AccountID, AccessKey: cfg.EmojiR2AccessKeyID, SecretKey: cfg.EmojiR2SecretAccessKey,
+		Bucket: cfg.EmojiR2Bucket, Endpoint: cfg.EmojiR2Endpoint, Region: cfg.EmojiR2Region,
+	}, cfg.EmojiPublicBaseURL)
+	if err != nil {
+		return err
+	}
+	emojiLimits := emoji.Limits{MaxBytes: cfg.EmojiMaxBytes, MaxEdge: cfg.EmojiMaxEdge}
+	if err := forums.UseEmoji(postgres.EmojiSettings{Store: emojiObjects, Limits: emojiLimits, Owners: cfg.EmojiSiteOwnerIDs}); err != nil {
+		return err
+	}
 	users := postgres.NewUsers(pool)
 	api := httpapi.NewAPI(verifier.Authenticate, users.Ensure)
 	if err := api.SetMediaLimits(limits); err != nil {
 		return err
 	}
+	api.RegisterEmoji(forums, emojiLimits)
 	api.RegisterForums(forums)
 	api.RegisterChannels(forums)
 	api.RegisterConversations(forums)
