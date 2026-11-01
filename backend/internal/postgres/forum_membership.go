@@ -16,9 +16,8 @@ func (s *Forums) RemoveMember(ctx context.Context, command forum.MemberRemoval) 
 	}
 	var result forum.RemovedMember
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var id string
-		if err := tx.QueryRow(ctx, `SELECT id::text FROM odysseia.forums WHERE id=$1 FOR UPDATE`, command.ForumID).Scan(&id); err != nil {
-			return forumError(err)
+		if err := lockForum(ctx, tx, command.ForumID); err != nil {
+			return err
 		}
 		previous, err := previousMemberRemoval(ctx, tx, command.OperationID)
 		if err == nil && previous.MemberRemoval != command {

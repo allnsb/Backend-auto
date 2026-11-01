@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -583,103 +584,165 @@ func mp4Container(kind string) bool {
 	}
 }
 
-// stripWebMLocation removes Matroska Tags elements. Voice notes do not need
-// them, and recorders put coordinates there. Clusters are copied whole.
-func stripWebMLocation(data []byte) []byte {
-	cleaned, err := filterEBML(data, 0)
-	if err != nil || len(cleaned) == 0 {
-		return data
+// stripWebMLocation replaces Tags and their Seek entries with equal-length
+// Void elements (RFC 9559). Element positions, size encodings and Cues stay
+// unchanged. CRCs in rewritten containers are removed rather than left stale.
+// A malformed tail rejects the upload; raw location metadata is never a fallback.
+func stripWebMLocation(data []byte) ([]byte, error) {
+	cleaned := append([]byte(nil), data...)
+	if err := filterEBML(cleaned, 0); err != nil {
+		return nil, err
 	}
-	return cleaned
+	return cleaned, nil
 }
 
-const ebmlIDTags = 0x1254C367
+const (
+	ebmlIDTags     = 0x1254C367
+	ebmlIDSeekHead = 0x114D9B74
+	ebmlIDSeek     = 0x4DBB
+	ebmlIDSeekID   = 0x53AB
+	ebmlIDCRC      = 0xBF
+)
 
-func filterEBML(data []byte, depth int) ([]byte, error) {
+func filterEBML(data []byte, depth int) error {
 	if depth > 6 {
-		return nil, ErrCorrupt
+		return ErrCorrupt
 	}
-	out := make([]byte, 0, len(data))
 	i := 0
 	elements := 0
 	for i < len(data) {
 		elements++
 		if elements > 10000 {
-			return nil, ErrCorrupt
+			return ErrCorrupt
 		}
 		start := i
 		id, width, err := readEBMLID(data, i)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		i += width
-		idBytes := append([]byte(nil), data[start:start+width]...)
 		size, unknown, sizeWidth, err := readEBMLSize(data, i)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		i += sizeWidth
 		if unknown {
-			if id == ebmlIDCluster {
-				return append(out, data[start:]...), nil
+			switch id {
+			case ebmlIDSegment:
+				return filterEBML(data[i:], depth+1)
+			case ebmlIDCluster:
+				end, err := webMClusterEnd(data, i)
+				if err != nil {
+					return err
+				}
+				i = end
+				continue
+			default:
+				return ErrCorrupt
 			}
-			payload, err := filterEBML(data[i:], depth+1)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, idBytes...)
-			out = append(out, data[i-sizeWidth:i]...)
-			return append(out, payload...), nil
 		}
 		if size > uint64(len(data)-i) {
-			return nil, ErrCorrupt
+			return ErrCorrupt
 		}
 		end := i + int(size)
 		payload := data[i:end]
 		i = end
-		if id == ebmlIDTags {
+		if id == ebmlIDTags || id == ebmlIDCRC {
+			voidEBML(data[start:end])
 			continue
+		}
+		if id == ebmlIDSeek {
+			tags, err := seekTargetsTags(payload)
+			if err != nil {
+				return err
+			}
+			if tags {
+				voidEBML(data[start:end])
+				continue
+			}
 		}
 		if ebmlMaster(id) {
-			filtered, err := filterEBML(payload, depth+1)
-			if err != nil {
-				return nil, err
+			if err := filterEBML(payload, depth+1); err != nil {
+				return err
 			}
-			out = append(out, writeEBML(idBytes, filtered)...)
-			continue
 		}
-		out = append(out, data[start:end]...)
 	}
-	return out, nil
+	return nil
+}
+
+// Unknown-size Clusters end at the next Segment-level element. Walk only
+// child headers, never encoded audio bytes, so later Tags are still scrubbed.
+func webMClusterEnd(data []byte, offset int) (int, error) {
+	for elements := 0; offset < len(data); elements++ {
+		if elements >= 100000 {
+			return 0, ErrCorrupt
+		}
+		id, width, err := readEBMLID(data, offset)
+		if err != nil {
+			return 0, err
+		}
+		switch id {
+		case ebmlIDSeekHead, ebmlIDInfo, ebmlIDTracks, ebmlIDCluster, ebmlIDTags,
+			0x1C53BB6B, 0x1941A469, 0x1043A770: // Cues, Attachments, Chapters.
+			return offset, nil
+		}
+		size, unknown, sizeWidth, err := readEBMLSize(data, offset+width)
+		if err != nil || unknown {
+			return 0, ErrCorrupt
+		}
+		offset += width + sizeWidth
+		if size > uint64(len(data)-offset) {
+			return 0, ErrCorrupt
+		}
+		offset += int(size)
+	}
+	return offset, nil
+}
+
+func seekTargetsTags(data []byte) (bool, error) {
+	for i := 0; i < len(data); {
+		id, width, err := readEBMLID(data, i)
+		if err != nil {
+			return false, err
+		}
+		size, unknown, sizeWidth, err := readEBMLSize(data, i+width)
+		if err != nil || unknown {
+			return false, ErrCorrupt
+		}
+		i += width + sizeWidth
+		if size > uint64(len(data)-i) {
+			return false, ErrCorrupt
+		}
+		end := i + int(size)
+		if id == ebmlIDSeekID && bytes.Equal(data[i:end], []byte{0x12, 0x54, 0xC3, 0x67}) {
+			return true, nil
+		}
+		i = end
+	}
+	return false, nil
+}
+
+// All callers pass a complete EBML element, which is at least two bytes.
+func voidEBML(data []byte) {
+	size, width := len(data)-2, 1
+	for size >= (1<<(7*width))-1 {
+		width++
+		size--
+	}
+	clear(data)
+	data[0] = 0xEC
+	for i := range width {
+		data[width-i] = byte(size >> (8 * i))
+	}
+	data[1] |= 0x80 >> (width - 1)
 }
 
 func ebmlMaster(id uint64) bool {
 	switch id {
-	case ebmlIDHeader, ebmlIDSegment, ebmlIDInfo, ebmlIDTracks, ebmlIDTrack:
+	case ebmlIDHeader, ebmlIDSegment, ebmlIDInfo, ebmlIDTracks, ebmlIDTrack, ebmlIDSeekHead, ebmlIDSeek:
 		return true
 	default:
 		return false
-	}
-}
-
-func writeEBML(id, payload []byte) []byte {
-	size := encodeEBMLSize(len(payload))
-	out := make([]byte, 0, len(id)+len(size)+len(payload))
-	out = append(out, id...)
-	out = append(out, size...)
-	return append(out, payload...)
-}
-
-func encodeEBMLSize(n int) []byte {
-	switch {
-	case n < 0x7F:
-		return []byte{0x80 | byte(n)}
-	case n < 0x3FFF:
-		return []byte{0x40 | byte(n>>8), byte(n)}
-	case n < 0x1FFFFF:
-		return []byte{0x20 | byte(n>>16), byte(n >> 8), byte(n)}
-	default:
-		return []byte{0x10 | byte(n>>24), byte(n >> 16), byte(n >> 8), byte(n)}
 	}
 }
 

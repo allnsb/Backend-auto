@@ -128,7 +128,11 @@ func Inspect(data []byte, declaredDurationMS int, limits Limits) (Prepared, erro
 	case isWebP(data):
 		return inspectImage(data, "image/webp", declaredDurationMS, limits, webp.DecodeConfig, stripWebP)
 	case isWebM(data):
-		return inspectVoice(stripWebMLocation(data), "audio/webm;codecs=opus", declaredDurationMS, limits, durationWebM)
+		cleaned, err := stripWebMLocation(data)
+		if err != nil {
+			return Prepared{}, err
+		}
+		return inspectVoice(cleaned, "audio/webm;codecs=opus", declaredDurationMS, limits, durationWebM)
 	case isMP4(data):
 		cleaned, err := stripMP4Location(data)
 		if err != nil {

@@ -35,16 +35,20 @@ func (s *Collaboration) AssignGroup(ctx context.Context, actorID, groupID, userI
 		return err
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := requirePlatformGrant(ctx, tx, actorID, identity.GrantManageGroups); err != nil {
+		managed, err := beginGroupChange(ctx, tx, actorID, userID)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1, $2)
+		_, err = tx.Exec(ctx, `INSERT INTO odysseia.user_groups (user_id, group_id) VALUES ($1, $2)
 			ON CONFLICT DO NOTHING`, userID, groupID)
 		var pgError *pgconn.PgError
 		if errors.As(err, &pgError) && pgError.Code == "23503" {
 			return forum.ErrNotFound
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return requireManagedForums(ctx, tx, managed)
 	})
 }
 
@@ -54,7 +58,8 @@ func (s *Collaboration) RemoveGroup(ctx context.Context, actorID, groupID, userI
 	}
 	var removed bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := requirePlatformGrant(ctx, tx, actorID, identity.GrantManageGroups); err != nil {
+		managed, err := beginGroupChange(ctx, tx, actorID, userID)
+		if err != nil {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `DELETE FROM odysseia.user_groups WHERE user_id=$1 AND group_id=$2`, userID, groupID)
@@ -62,9 +67,57 @@ func (s *Collaboration) RemoveGroup(ctx context.Context, actorID, groupID, userI
 			return err
 		}
 		removed = tag.RowsAffected() == 1
-		return nil
+		return requireManagedForums(ctx, tx, managed)
 	})
-	return removed, err
+	return removed && err == nil, err
+}
+
+// Directory changes can alter a member's winning role in many forums. The
+// exclusive control lock serializes them with forum role/member changes,
+// which take its shared form before their forum row lock. Message writes do
+// not participate. Capture only previously managed forums, so an unrelated
+// pre-existing unmanaged forum does not prevent a directory change.
+func beginGroupChange(ctx context.Context, tx pgx.Tx, actorID, userID string) ([]string, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('odysseia:identity-management', 0))`); err != nil {
+		return nil, err
+	}
+	if _, err := requirePlatformGrant(ctx, tx, actorID, identity.GrantManageGroups); err != nil {
+		return nil, err
+	}
+	var managed []string
+	err := tx.QueryRow(ctx, `SELECT ARRAY(
+		SELECT m.forum_id::text FROM odysseia.forum_members m
+		WHERE m.user_id = $1 AND COALESCE((
+			SELECT g.can_manage_members FROM odysseia.identity_groups g
+			WHERE g.id = m.role_id OR g.id IN (
+				SELECT group_id FROM odysseia.user_groups WHERE user_id = m.user_id)
+			ORDER BY g.priority DESC, g.id LIMIT 1
+		), false))`, userID).Scan(&managed)
+	return managed, err
+}
+
+func requireManagedForums(ctx context.Context, tx pgx.Tx, forumIDs []string) error {
+	if len(forumIDs) == 0 {
+		return nil
+	}
+	var lost bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM unnest($1::uuid[]) f(id) WHERE NOT EXISTS (
+			SELECT 1 FROM odysseia.forum_members m WHERE m.forum_id = f.id
+			AND COALESCE((
+				SELECT g.can_manage_members FROM odysseia.identity_groups g
+				WHERE g.id = m.role_id OR g.id IN (
+					SELECT group_id FROM odysseia.user_groups WHERE user_id = m.user_id)
+				ORDER BY g.priority DESC, g.id LIMIT 1
+			), false)
+		))`, forumIDs).Scan(&lost)
+	if err != nil {
+		return err
+	}
+	if lost {
+		return forum.ErrLastManager
+	}
+	return nil
 }
 
 func (s *Collaboration) ListMembers(ctx context.Context, actorID, forumID, after string, limit int) ([]forum.Member, error) {
@@ -258,7 +311,7 @@ func (s *Collaboration) EffectivePermissions(ctx context.Context, actorID, forum
 
 const groupSelectSQL = `SELECT id::text, name, priority, can_read, can_post, can_delete, can_manage_members, can_manage_groups FROM odysseia.identity_groups`
 
-func requireForumMember(ctx context.Context, tx pgx.Tx, forumID, userID string) (identity.Group, bool, error) {
+func requireForumMember(ctx context.Context, tx rowQueryer, forumID, userID string) (identity.Group, bool, error) {
 	winner, member, err := forumCandidates(ctx, tx, forumID, userID)
 	if err != nil {
 		return identity.Group{}, false, err
@@ -300,7 +353,7 @@ func requirePlatformGrant(ctx context.Context, tx pgx.Tx, userID, grant string) 
 	return winner, nil
 }
 
-func forumCandidates(ctx context.Context, tx pgx.Tx, forumID, userID string) (identity.Group, bool, error) {
+func forumCandidates(ctx context.Context, tx rowQueryer, forumID, userID string) (identity.Group, bool, error) {
 	rows, err := tx.Query(ctx, `SELECT
 		EXISTS (SELECT 1 FROM odysseia.forum_members WHERE forum_id=$1 AND user_id=$2),
 		g.id::text, g.name, g.priority, g.can_read, g.can_post, g.can_delete, g.can_manage_members, g.can_manage_groups
@@ -336,6 +389,9 @@ func forumCandidates(ctx context.Context, tx pgx.Tx, forumID, userID string) (id
 }
 
 func lockForum(ctx context.Context, tx pgx.Tx, forumID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended('odysseia:identity-management', 0))`); err != nil {
+		return err
+	}
 	var id string
 	err := tx.QueryRow(ctx, `SELECT id::text FROM odysseia.forums WHERE id=$1 FOR UPDATE`, forumID).Scan(&id)
 	return forumError(err)

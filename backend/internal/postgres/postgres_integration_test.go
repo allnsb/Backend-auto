@@ -175,6 +175,9 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 	t.Run("custom emoji", func(t *testing.T) {
 		testEmoji(t, ctx, migrationURL, pool)
 	})
+	t.Run("takeover authorization regressions", func(t *testing.T) {
+		testTakeoverRegressions(t, ctx, migrationURL, pool)
+	})
 	t.Run("discussion modes and fixed channels", func(t *testing.T) {
 		owner, err := Open(ctx, migrationURL)
 		if err != nil {

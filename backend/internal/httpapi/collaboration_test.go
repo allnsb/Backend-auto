@@ -103,6 +103,15 @@ func TestCollaborationRoutesAndPermissionGate(t *testing.T) {
 	if assigned.Code != http.StatusOK || store.assignedUser != other {
 		t.Fatalf("assign status=%d user=%s", assigned.Code, store.assignedUser)
 	}
+	store.groupErr = forum.ErrLastManager
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		held := call(method, "/v1/identity/groups/"+identity.OwnerGroupID+"/members/"+other, "")
+		if held.Code != http.StatusConflict {
+			t.Fatalf("last manager directory change %s status=%d", method, held.Code)
+		}
+		assertProblem(t, doc, held, "last_manager")
+	}
+	store.groupErr = nil
 	store.allow = false
 	blocked := call(http.MethodDelete, "/v1/identity/groups/"+identity.OwnerGroupID+"/members/"+other, "")
 	if blocked.Code != http.StatusForbidden {
@@ -150,6 +159,7 @@ type collaborationFake struct {
 	removed      bool
 	assignedUser string
 	removeErr    error
+	groupErr     error
 }
 
 func (f *collaborationFake) ListGroups(context.Context) ([]identity.Group, error) {
@@ -166,6 +176,9 @@ func (f *collaborationFake) AssignGroup(_ context.Context, actorID, _, userID st
 	if actorID != f.actor || !f.allow {
 		return forum.ErrForbidden
 	}
+	if f.groupErr != nil {
+		return f.groupErr
+	}
 	f.assignedUser = userID
 	return nil
 }
@@ -174,7 +187,7 @@ func (f *collaborationFake) RemoveGroup(_ context.Context, actorID, _, _ string)
 	if actorID != f.actor || !f.allow {
 		return false, forum.ErrForbidden
 	}
-	return true, nil
+	return f.groupErr == nil, f.groupErr
 }
 
 func (f *collaborationFake) ListMembers(context.Context, string, string, string, int) ([]forum.Member, error) {

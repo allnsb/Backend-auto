@@ -24,7 +24,7 @@ func TestConversationRoutesHideNonMembersAndKeepTheReadCursor(t *testing.T) {
 	if err := doc.Validate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Info.Version != "0.9.0" {
+	if doc.Info.Version != "0.9.1" {
 		t.Fatalf("version %s", doc.Info.Version)
 	}
 	actor := identity.User{ID: "dc9de165-b912-4dcb-8620-8dfdb30176b7", CreatedAt: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}
