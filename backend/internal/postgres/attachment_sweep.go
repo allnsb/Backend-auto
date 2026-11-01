@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	// One batch keeps the row locks short while each DeleteObject runs.
+	// Rows stay locked until this batch's sequential object deletes finish.
+	// A network stall can extend the transaction; the batch is a row-count cap,
+	// not a guarantee of short lock duration.
 	// R2 accepts a single DeleteObject that is already gone; DeleteObjects is
 	// not used because aws-sdk-go-v2 attaches a required CRC32 checksum that
 	// R2 rejects.

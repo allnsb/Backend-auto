@@ -97,7 +97,7 @@ func (s *Forums) DeleteSiteEmoji(ctx context.Context, actor, id string) error {
 	if !s.emojiOwner(actor) {
 		return emoji.ErrForbidden
 	}
-	return s.deleteEmoji(ctx, id, "site", "")
+	return s.deleteEmoji(ctx, actor, id, "site", "")
 }
 
 func (s *Forums) DeleteForumEmoji(ctx context.Context, actor, forumID, id string) error {
@@ -107,7 +107,7 @@ func (s *Forums) DeleteForumEmoji(ctx context.Context, actor, forumID, id string
 	if err := s.forumEmojiManager(ctx, actor, forumID); err != nil {
 		return err
 	}
-	return s.deleteEmoji(ctx, id, "forum", forumID)
+	return s.deleteEmoji(ctx, actor, id, "forum", forumID)
 }
 
 func (s *Forums) createEmoji(ctx context.Context, actor, requestID, scope, forumID, name string, image emoji.Image) (emoji.Emoji, error) {
@@ -150,6 +150,11 @@ func (s *Forums) createEmoji(ctx context.Context, actor, requestID, scope, forum
 		if err := lockEmoji(ctx, tx, scopeKey); err != nil {
 			return err
 		}
+		if scope == "forum" {
+			if err := s.forumEmojiManagerTx(ctx, tx, actor, forumID); err != nil {
+				return err
+			}
+		}
 		existing, found, err := findEmojiRequest(ctx, tx, actor, requestID, s.emojiURL())
 		if err != nil {
 			return err
@@ -163,11 +168,6 @@ func (s *Forums) createEmoji(ctx context.Context, actor, requestID, scope, forum
 			}
 			result = existing.item
 			return nil
-		}
-		if scope == "forum" {
-			if err := s.forumEmojiManagerTx(ctx, tx, actor, forumID); err != nil {
-				return err
-			}
 		}
 		limit := emoji.MaxSiteLive
 		if scope == "forum" {
@@ -231,16 +231,23 @@ func (s *Forums) loadEmoji(ctx context.Context, q rowQueryer, id string) (emoji.
 	return item, err
 }
 
-func (s *Forums) deleteEmoji(ctx context.Context, id, scope, forumID string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE odysseia.emojis SET deleted_at = transaction_timestamp()
-		WHERE id = $1 AND scope = $2 AND deleted_at IS NULL AND forum_id IS NOT DISTINCT FROM $3::uuid`, id, scope, forumArg(forumID))
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() != 1 {
-		return emoji.ErrNotFound
-	}
-	return nil
+func (s *Forums) deleteEmoji(ctx context.Context, actor, id, scope, forumID string) error {
+	return writeTransaction(ctx, s.pool, func(tx pgx.Tx) error {
+		if scope == "forum" {
+			if err := s.forumEmojiManagerTx(ctx, tx, actor, forumID); err != nil {
+				return err
+			}
+		}
+		tag, err := tx.Exec(ctx, `UPDATE odysseia.emojis SET deleted_at = transaction_timestamp()
+			WHERE id = $1 AND scope = $2 AND deleted_at IS NULL AND forum_id IS NOT DISTINCT FROM $3::uuid`, id, scope, forumArg(forumID))
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return emoji.ErrNotFound
+		}
+		return nil
+	})
 }
 
 func (s *Forums) emojiOwner(actor string) bool {
@@ -271,24 +278,28 @@ func (s *Forums) forumEmojiManager(ctx context.Context, actor, forumID string) e
 }
 
 func (s *Forums) forumEmojiManagerTx(ctx context.Context, tx pgx.Tx, actor, forumID string) error {
+	if err := lockForum(ctx, tx, forumID); err != nil {
+		return emojiPermissionError(err)
+	}
 	return s.forumEmojiManagerQuery(ctx, tx, actor, forumID)
 }
 
 func (s *Forums) forumEmojiManagerQuery(ctx context.Context, q rowQueryer, actor, forumID string) error {
-	var priority int
-	err := q.QueryRow(ctx, `SELECT g.priority FROM odysseia.forum_members m
-		JOIN odysseia.identity_groups g ON g.id = m.role_id
-		WHERE m.forum_id = $1 AND m.user_id = $2`, forumID, actor).Scan(&priority)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return emoji.ErrNotFound
-	}
+	winner, _, err := requireForumMember(ctx, q, forumID, actor)
 	if err != nil {
-		return err
+		return emojiPermissionError(err)
 	}
-	if priority < identity.ModeratorPriority {
+	if winner.Priority < identity.ModeratorPriority {
 		return emoji.ErrForbidden
 	}
 	return nil
+}
+
+func emojiPermissionError(err error) error {
+	if errors.Is(err, forum.ErrNotFound) {
+		return emoji.ErrNotFound
+	}
+	return err
 }
 
 type emojiRequest struct {

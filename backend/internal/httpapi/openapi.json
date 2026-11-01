@@ -2,7 +2,7 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Custom emoji are site-wide or per forum. A forum emoji can be sent only in topics and channels of that same forum. Conversations accept site emoji only. Messages cite them as <:name:id> or <a:name:id>. Bytes live in a public bucket separate from conversation attachments, with a content-hash key and Cache-Control immutable. Deleting an emoji keeps the object and rewrites later reads of that token to :name:. Connection JWTs grant identity only. Author and platform overrides, works, read receipts and production capacity remain separate stages."
   },
   "servers": [
@@ -158,7 +158,7 @@
     "/v1/identity/groups/{group_id}/members/{user_id}": {
       "put": {
         "operationId": "assignIdentityGroup",
-        "description": "Assigns a catalog group to a local user. Repeated assignment is the same result. The caller needs manage_groups on their highest-priority catalog group. The first owner is inserted by the migration role.",
+        "description": "Assigns a catalog group to a local user. Repeated assignment is the same result. The caller needs manage_groups on their highest-priority catalog group. The first owner is inserted by the migration role. Returns 409 last_manager if the change would leave a previously managed forum without an effective manager; the assignment is rolled back.",
         "security": [
           {
             "accessToken": []
@@ -197,12 +197,15 @@
           },
           "503": {
             "$ref": "#/components/responses/Unavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
           }
         }
       },
       "delete": {
         "operationId": "removeIdentityGroup",
-        "description": "Removes a catalog assignment. Removing an assignment that is already absent returns removed=false. Requires manage_groups.",
+        "description": "Removes a catalog assignment. Removing an assignment that is already absent returns removed=false. Requires manage_groups. Returns 409 last_manager if the change would leave a previously managed forum without an effective manager; the assignment is rolled back.",
         "security": [
           {
             "accessToken": []
@@ -238,6 +241,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Unavailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/LastManager"
           }
         }
       }
@@ -3965,7 +3971,7 @@
         }
       },
       "LastManager": {
-        "description": "The group owner must transfer ownership before leaving. The sole owner dissolves the group instead. Code last_manager.",
+        "description": "The change would remove the last effective forum manager, or a group owner is trying to leave without transferring ownership. Code last_manager. A sole group owner may dissolve the conversation instead.",
         "content": {
           "application/problem+json": {
             "schema": {

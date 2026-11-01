@@ -827,12 +827,18 @@ func insertGroup(ctx context.Context, tx pgx.Tx, actor, requestID string, draft 
 
 func lockConversation(ctx context.Context, tx pgx.Tx, actor, id string) (lockedConversation, error) {
 	var locked lockedConversation
-	err := tx.QueryRow(ctx, `SELECT c.id::text, c.kind, m.role, s.last_position, m.last_read_position
+	err := tx.QueryRow(ctx, `SELECT c.id::text, c.kind, s.last_position
 		FROM odysseia.message_streams s
 		JOIN odysseia.conversations c ON c.id = s.id
-		JOIN odysseia.conversation_members m ON m.conversation_id = c.id
-		WHERE s.id = $1 AND m.user_id = $2 AND m.removed_at IS NULL AND c.dissolved_at IS NULL
-		FOR UPDATE OF s, c`, id, actor).Scan(&locked.id, &locked.kind, &locked.role, &locked.last, &locked.read)
+		WHERE s.id = $1 AND c.dissolved_at IS NULL
+		FOR UPDATE OF s, c`, id).Scan(&locked.id, &locked.kind, &locked.last)
+	if err != nil {
+		return locked, conversationError(err)
+	}
+	// Member and owner changes use these same locks. Read membership in a new
+	// statement after any wait; the locking statement's snapshot may be stale.
+	err = tx.QueryRow(ctx, `SELECT role, last_read_position FROM odysseia.conversation_members
+		WHERE conversation_id = $1 AND user_id = $2 AND removed_at IS NULL`, id, actor).Scan(&locked.role, &locked.read)
 	return locked, conversationError(err)
 }
 
@@ -842,11 +848,17 @@ func lockConversationMessage(ctx context.Context, tx pgx.Tx, actor, id, requestI
 	batch.Queue(`SELECT s.id::text, s.last_position, transaction_timestamp()
 		FROM odysseia.message_streams s
 		JOIN odysseia.conversations c ON c.id = s.id
-		JOIN odysseia.conversation_members m ON m.conversation_id = c.id
-		WHERE s.id = $1 AND m.user_id = $2 AND m.removed_at IS NULL AND c.dissolved_at IS NULL
-		FOR UPDATE OF s, c`, id, actor).QueryRow(func(row pgx.Row) error {
+		WHERE s.id = $1 AND c.dissolved_at IS NULL
+		FOR UPDATE OF s, c`, id).QueryRow(func(row pgx.Row) error {
 		var streamID string
 		return conversationError(row.Scan(&streamID, &state.last, &state.at))
+	})
+	// A separate batch statement obtains a fresh READ COMMITTED snapshot after
+	// the lock. Authorization precedes even an idempotent message replay.
+	batch.Queue(`SELECT 1 FROM odysseia.conversation_members
+		WHERE conversation_id = $1 AND user_id = $2 AND removed_at IS NULL`, id, actor).QueryRow(func(row pgx.Row) error {
+		var member int
+		return conversationError(row.Scan(&member))
 	})
 	batch.Queue(`SELECT m.id::text, m.stream_id::text, m.position, m.author_id::text, m.body,
 		COALESCE(m.quote_id::text, ''), m.created_at, m.request_hash
