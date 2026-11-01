@@ -129,8 +129,8 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 		}
 		applied += result.applied
 	}
-	if applied != 13 {
-		t.Fatalf("concurrent migrations applied = %d, want 13", applied)
+	if applied != 14 {
+		t.Fatalf("concurrent migrations applied = %d, want 14", applied)
 	}
 	applied, err = MigrateUp(ctx, migrationURL)
 	if err != nil {
@@ -185,5 +185,8 @@ func TestMigrationsAreExplicitAndRepeatable(t *testing.T) {
 		}
 		defer owner.Close()
 		testDiscussionModesAndChannels(t, ctx, owner, pool)
+	})
+	t.Run("author-private work drafts", func(t *testing.T) {
+		testWorks(t, ctx, migrationURL, pool)
 	})
 }

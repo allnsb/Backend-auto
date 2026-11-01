@@ -34,13 +34,20 @@ type messagePageCache struct {
 // A zero write limit selects the automatic per-instance budget. An explicit
 // limit cannot exceed this pool; it does not allocate or reserve connections.
 func NewCachedForums(pool *pgxpool.Pool, maxWriteTransactions int64) (*Forums, error) {
-	if maxWriteTransactions < 0 || maxWriteTransactions > int64(pool.Config().MaxConns) {
-		return nil, fmt.Errorf("write transaction budget must be between zero (automatic) and pool maximum %d", pool.Config().MaxConns)
+	budget, err := NewWriteBudget(pool, maxWriteTransactions)
+	if err != nil {
+		return nil, err
 	}
-	store := NewForums(pool)
-	if maxWriteTransactions > 0 {
-		store.writes = newWriteAdmission(maxWriteTransactions, forumWriteQueueLimit)
+	return NewCachedForumsWithBudget(pool, budget)
+}
+
+// NewCachedForumsWithBudget lets independent stores share the serving pool's
+// admission budget without depending on one another's private state.
+func NewCachedForumsWithBudget(pool *pgxpool.Pool, budget *WriteBudget) (*Forums, error) {
+	if pool == nil || budget == nil || budget.limit < 1 || budget.limit > int64(pool.Config().MaxConns) {
+		return nil, fmt.Errorf("forum cache requires a write budget within the pool maximum")
 	}
+	store := newForums(pool, budget)
 	cache, err := ristretto.NewCache(&ristretto.Config[string, cachedMessagePage]{
 		NumCounters: 10000, MaxCost: forumPageCacheCost, BufferItems: 64,
 	})

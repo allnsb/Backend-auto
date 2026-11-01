@@ -183,14 +183,14 @@ func TestWriteAdmissionGlobalCancellationAndNamespaces(t *testing.T) {
 
 	gate = newWriteAdmission(4, 4)
 	var holders []func()
-	for _, key := range []writeScope{{streamID: "same-uuid"}, {forumID: "same-uuid"}} {
+	for _, key := range []writeScope{{streamID: "same-uuid"}, {forumID: "same-uuid"}, {workID: "same-uuid"}, {workAuthorID: "same-uuid"}} {
 		release, err := gate.acquire(context.Background(), key)
 		if err != nil {
 			t.Fatalf("forum and stream counter namespaces were coupled: %v", err)
 		}
 		holders = append(holders, release)
 	}
-	if len(gate.scopes) != 2 {
+	if len(gate.scopes) != 4 {
 		t.Fatal("counter namespaces were not kept distinct")
 	}
 	for _, release := range holders {
@@ -201,7 +201,7 @@ func TestWriteAdmissionGlobalCancellationAndNamespaces(t *testing.T) {
 	}
 }
 
-func waitWriteReferences(t *testing.T, gate *writeAdmission, key writeScope, expected int) {
+func waitWriteReferences(t *testing.T, gate *WriteBudget, key writeScope, expected int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

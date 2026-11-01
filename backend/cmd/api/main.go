@@ -50,11 +50,19 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	forums, err := postgres.NewCachedForums(pool, cfg.MaxWriteTransactions)
+	budget, err := postgres.NewWriteBudget(pool, cfg.MaxWriteTransactions)
+	if err != nil {
+		return err
+	}
+	forums, err := postgres.NewCachedForumsWithBudget(pool, budget)
 	if err != nil {
 		return err
 	}
 	defer forums.Close()
+	works, err := postgres.NewWorks(pool, budget)
+	if err != nil {
+		return err
+	}
 	if err := forums.UseConversationMemberLimit(cfg.ConversationMemberLimit); err != nil {
 		return err
 	}
@@ -96,6 +104,7 @@ func run(ctx context.Context) error {
 	api.RegisterForums(forums)
 	api.RegisterChannels(forums)
 	api.RegisterConversations(forums)
+	api.RegisterWorks(works)
 	api.RegisterCollaboration(postgres.NewCollaboration(pool))
 	if err := api.RegisterRealtime(tokens, forums, cfg.RealtimeProxySecret); err != nil {
 		return err
