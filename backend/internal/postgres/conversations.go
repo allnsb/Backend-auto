@@ -298,6 +298,9 @@ func (s *Forums) ListConversationMessages(ctx context.Context, actor, id string,
 	if err := fillAttachments(ctx, s.pool, items); err != nil {
 		return nil, err
 	}
+	if err := s.presentMessages(ctx, items); err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -341,10 +344,17 @@ func (s *Forums) SendConversationMessage(ctx context.Context, actor, id, request
 		if err != nil {
 			return err
 		}
-		result, err = appendConversationMessage(ctx, tx, actor, id, draft, requestID, digest[:], state, attached)
+		result, err = s.appendConversationMessage(ctx, tx, actor, id, draft, requestID, digest[:], state, attached)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return message.Message{}, err
+	}
+	shown := []message.Message{result}
+	if err := s.presentMessages(ctx, shown); err != nil {
+		return message.Message{}, err
+	}
+	return shown[0], nil
 }
 
 func (s *Forums) AddConversationMember(ctx context.Context, actor, id, userID string) (conversation.Member, error) {
@@ -864,11 +874,16 @@ func lockConversationMessage(ctx context.Context, tx pgx.Tx, actor, id, requestI
 	return state, tx.SendBatch(ctx, batch).Close()
 }
 
-func appendConversationMessage(ctx context.Context, tx pgx.Tx, actor, id string, draft conversation.MessageDraft, requestID string, digest []byte, state lockedMessage, attached []message.Attachment) (message.Message, error) {
+func (s *Forums) appendConversationMessage(ctx context.Context, tx pgx.Tx, actor, id string, draft conversation.MessageDraft, requestID string, digest []byte, state lockedMessage, attached []message.Attachment) (message.Message, error) {
 	msg := message.Message{
 		ID: uuid.NewString(), StreamID: id, Sequence: state.last + 1, AuthorID: actor,
 		Body: draft.Body, QuoteID: draft.QuoteID, Attachments: attached, CreatedAt: state.at,
 	}
+	refs, err := s.bindEmoji(ctx, tx, draft.Body, "")
+	if err != nil {
+		return message.Message{}, err
+	}
+	msg.Emojis = refs
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return message.Message{}, err

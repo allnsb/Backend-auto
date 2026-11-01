@@ -15,6 +15,7 @@ import (
 
 	"odysseia.local/backend/internal/blob"
 	"odysseia.local/backend/internal/conversation"
+	"odysseia.local/backend/internal/emoji"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/message"
@@ -32,6 +33,9 @@ type Forums struct {
 	quotaBytes              int64
 	presignTTL              time.Duration
 	maxAttachments          int
+	emojiStore              blob.PublicStore
+	emojiLimits             emoji.Limits
+	emojiOwners             map[string]struct{}
 }
 
 func NewForums(pool *pgxpool.Pool) *Forums {
@@ -49,6 +53,7 @@ func NewForums(pool *pgxpool.Pool) *Forums {
 		quotaBytes:              100 << 20,
 		presignTTL:              time.Minute,
 		maxAttachments:          conversation.MaxAttachmentsPerMessage,
+		emojiLimits:             emoji.DefaultLimits(),
 	}
 }
 
@@ -130,15 +135,27 @@ func (s *Forums) listStreamMessages(ctx context.Context, streamID string, after,
 	// Closed prefixes never change on append; an incomplete page gets a new
 	// bound after another node writes. Future editing/deletion must version or
 	// invalidate these pages before that capability is introduced.
+	// Emoji projection runs after this cache. Deleting an emoji changes the
+	// next read without rewriting the stored token or the cached page.
 	through := after + min(last-after, int64(limit+1))
 	load := func(ctx context.Context) ([]forum.Entry, error) {
 		return s.loadMessagePage(ctx, streamID, after, through, limit)
 	}
+	var entries []forum.Entry
+	var err error
 	if s.pages == nil {
-		return load(ctx)
+		entries, err = load(ctx)
+	} else {
+		key := fmt.Sprintf("%s/%d/%d/%d", streamID, after, through, limit)
+		entries, err = s.pages.read(ctx, key, load)
 	}
-	key := fmt.Sprintf("%s/%d/%d/%d", streamID, after, through, limit)
-	return s.pages.read(ctx, key, load)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.presentEntries(ctx, entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 // Callers establish current membership first. This query reads content only,
@@ -200,14 +217,27 @@ func (s *Forums) CreateTopic(ctx context.Context, actor, forumID, requestID stri
 		if err != nil {
 			return err
 		}
+		refs, err := s.bindEmoji(ctx, tx, draft.Body, forumID)
+		if err != nil {
+			return err
+		}
 		entry, err := insertEntry(ctx, tx, topic.ID, actor, 1, forum.ReplyDraft{Body: draft.Body}, "", nil)
 		if err != nil {
 			return err
 		}
+		entry.Emojis = refs
 		result = forum.CreatedTopic{Topic: topic, OpeningMessage: entry}
 		return enqueueForumEvent(ctx, tx, "forum:"+forumID, "forum.topic.created", forumID, topic.Position, topic)
 	})
-	return result, err
+	if err != nil {
+		return forum.CreatedTopic{}, err
+	}
+	shown := []forum.Entry{result.OpeningMessage}
+	if err := s.presentEntries(ctx, shown); err != nil {
+		return forum.CreatedTopic{}, err
+	}
+	result.OpeningMessage = shown[0]
+	return result, nil
 }
 
 func (s *Forums) Reply(ctx context.Context, actor, topicID, requestID string, draft forum.ReplyDraft) (forum.Entry, error) {
@@ -240,10 +270,17 @@ func (s *Forums) Reply(ctx context.Context, actor, topicID, requestID string, dr
 		if err := draft.ValidateReferences(state.references); err != nil {
 			return err
 		}
-		result, err = appendReply(ctx, tx, topicID, actor, draft, requestID, digest[:], state)
+		result, err = s.appendReply(ctx, tx, topicID, actor, draft, requestID, digest[:], state, topic.ForumID)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return forum.Entry{}, err
+	}
+	shown := []forum.Entry{result}
+	if err := s.presentEntries(ctx, shown); err != nil {
+		return forum.Entry{}, err
+	}
+	return shown[0], nil
 }
 
 func previousTopic(ctx context.Context, tx pgx.Tx, actor, forumID, requestID string, digest [32]byte) (forum.CreatedTopic, bool, error) {
@@ -387,12 +424,16 @@ func insertEntry(ctx context.Context, tx pgx.Tx, topicID, actor string, position
 
 // appendReply requires the current locked counter, DB transaction time and
 // validated references. Body, relation and event then travel in one write batch.
-func appendReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, state lockedReply) (forum.Entry, error) {
-	return appendStreamReply(ctx, tx, topicID, actor, draft, requestID, digest, topicMessageStream, state)
+func (s *Forums) appendReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, state lockedReply, placeForum string) (forum.Entry, error) {
+	return s.appendStreamReply(ctx, tx, topicID, actor, draft, requestID, digest, topicMessageStream, state, placeForum)
 }
 
-func appendStreamReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, stream messageStream, state lockedReply) (forum.Entry, error) {
-	entry := forum.Entry{Message: message.Message{ID: uuid.NewString(), StreamID: topicID, Sequence: state.lastPosition + 1, AuthorID: actor, Body: draft.Body, QuoteID: draft.QuoteID, CreatedAt: state.transactionTime}, RootID: draft.RootID}
+func (s *Forums) appendStreamReply(ctx context.Context, tx pgx.Tx, topicID, actor string, draft forum.ReplyDraft, requestID string, digest []byte, stream messageStream, state lockedReply, placeForum string) (forum.Entry, error) {
+	refs, err := s.bindEmoji(ctx, tx, draft.Body, placeForum)
+	if err != nil {
+		return forum.Entry{}, err
+	}
+	entry := forum.Entry{Message: message.Message{ID: uuid.NewString(), StreamID: topicID, Sequence: state.lastPosition + 1, AuthorID: actor, Body: draft.Body, QuoteID: draft.QuoteID, Emojis: refs, CreatedAt: state.transactionTime}, RootID: draft.RootID}
 	var data any = entry.Message
 	if stream.forumLayout {
 		data = entry

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 )
 
 type Config struct {
@@ -39,6 +41,16 @@ type Config struct {
 	AttachmentQuotaBytes       int64
 	AttachmentPresignTTL       time.Duration
 	AttachmentMaxPerMessage    int
+	EmojiR2AccountID           string
+	EmojiR2AccessKeyID         string
+	EmojiR2SecretAccessKey     string
+	EmojiR2Bucket              string
+	EmojiR2Endpoint            string
+	EmojiR2Region              string
+	EmojiPublicBaseURL         string
+	EmojiMaxBytes              int64
+	EmojiMaxEdge               int
+	EmojiSiteOwnerIDs          []string
 }
 
 func Load() (Config, error) {
@@ -93,7 +105,84 @@ func Load() (Config, error) {
 	if err := loadAttachmentConfig(&cfg); err != nil {
 		return Config{}, err
 	}
+	if err := loadEmojiConfig(&cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func loadEmojiConfig(cfg *Config) error {
+	cfg.EmojiR2Bucket = os.Getenv("ODYSSEIA_EMOJI_R2_BUCKET")
+	if !bucketName(cfg.EmojiR2Bucket) {
+		return errors.New("ODYSSEIA_EMOJI_R2_BUCKET must be a lowercase DNS label of 3 to 63 characters")
+	}
+	if cfg.EmojiR2Bucket == cfg.R2Bucket {
+		return errors.New("ODYSSEIA_EMOJI_R2_BUCKET must differ from ODYSSEIA_R2_BUCKET")
+	}
+	account := os.Getenv("ODYSSEIA_EMOJI_R2_ACCOUNT_ID")
+	key := os.Getenv("ODYSSEIA_EMOJI_R2_ACCESS_KEY_ID")
+	secret := os.Getenv("ODYSSEIA_EMOJI_R2_SECRET_ACCESS_KEY")
+	endpoint := os.Getenv("ODYSSEIA_EMOJI_R2_ENDPOINT")
+	region := os.Getenv("ODYSSEIA_EMOJI_R2_REGION")
+	if account == "" && key == "" && secret == "" && endpoint == "" && region == "" {
+		account, key, secret, endpoint, region = cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Endpoint, cfg.R2Region
+	} else if !asciiToken(account, 1, 64) || strings.ContainsAny(account, ".-") || !asciiToken(key, 1, 128) || strings.ContainsAny(secret, "\r\n") || secret == "" || len(secret) > 256 {
+		return errors.New("ODYSSEIA_EMOJI_R2_ACCOUNT_ID, ODYSSEIA_EMOJI_R2_ACCESS_KEY_ID and ODYSSEIA_EMOJI_R2_SECRET_ACCESS_KEY are required together")
+	} else if endpoint != "" {
+		parsed, err := url.Parse(endpoint)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return errors.New("ODYSSEIA_EMOJI_R2_ENDPOINT must be an https origin without user info, query, or fragment")
+		}
+	}
+	if region == "" {
+		region = "auto"
+	}
+	if !asciiToken(region, 1, 32) {
+		return errors.New("ODYSSEIA_EMOJI_R2_REGION must be 1 to 32 letters, digits, or hyphens")
+	}
+	base := os.Getenv("ODYSSEIA_EMOJI_PUBLIC_BASE_URL")
+	if strings.HasSuffix(base, "/") || !strings.HasPrefix(base, "https://") || strings.ContainsAny(base, "?#@") {
+		return errors.New("ODYSSEIA_EMOJI_PUBLIC_BASE_URL must be an https URL without user info, query, fragment, or a trailing slash")
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("ODYSSEIA_EMOJI_PUBLIC_BASE_URL must be an https URL without user info, query, fragment, or a trailing slash")
+	}
+	cfg.EmojiR2AccountID = account
+	cfg.EmojiR2AccessKeyID = key
+	cfg.EmojiR2SecretAccessKey = secret
+	cfg.EmojiR2Endpoint = endpoint
+	cfg.EmojiR2Region = region
+	cfg.EmojiPublicBaseURL = base
+	cfg.EmojiMaxBytes = 256 * 1024
+	cfg.EmojiMaxEdge = 128
+	if cfg.EmojiMaxBytes, err = optionalInt64("ODYSSEIA_EMOJI_MAX_BYTES", cfg.EmojiMaxBytes, 1, 256*1024); err != nil {
+		return err
+	}
+	if cfg.EmojiMaxEdge, err = optionalInt("ODYSSEIA_EMOJI_MAX_EDGE", cfg.EmojiMaxEdge, 1, 256); err != nil {
+		return err
+	}
+	rawOwners := os.Getenv("ODYSSEIA_EMOJI_SITE_OWNER_IDS")
+	if rawOwners == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, part := range strings.Split(rawOwners, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return errors.New("ODYSSEIA_EMOJI_SITE_OWNER_IDS must be canonical UUIDs separated by commas")
+		}
+		parsed, err := uuid.Parse(part)
+		if err != nil || parsed == uuid.Nil || parsed.String() != part {
+			return errors.New("ODYSSEIA_EMOJI_SITE_OWNER_IDS must be canonical UUIDs separated by commas")
+		}
+		if _, ok := seen[part]; ok {
+			return errors.New("ODYSSEIA_EMOJI_SITE_OWNER_IDS must be canonical UUIDs separated by commas")
+		}
+		seen[part] = struct{}{}
+		cfg.EmojiSiteOwnerIDs = append(cfg.EmojiSiteOwnerIDs, part)
+	}
+	return nil
 }
 
 // ObjectStore is the R2 (or other S3-compatible) target. The API and the

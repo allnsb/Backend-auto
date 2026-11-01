@@ -11,6 +11,9 @@ const (
 	MemberGroupID      = "00000000-0000-4000-8000-000000000001"
 	ModeratorGroupID   = "00000000-0000-4000-8000-000000000002"
 	OwnerGroupID       = "00000000-0000-4000-8000-000000000003"
+	// ModeratorPriority matches the seeded moderator row. Owner is 300.
+	// Forum emoji management accepts this priority and anything higher.
+	ModeratorPriority = 200
 )
 
 // Group is one configured identity role. Priority is comparable across groups;

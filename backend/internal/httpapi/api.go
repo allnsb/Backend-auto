@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"odysseia.local/backend/internal/conversation"
+	"odysseia.local/backend/internal/emoji"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/identity"
 	"odysseia.local/backend/internal/media"
@@ -33,6 +34,7 @@ type API struct {
 	resolve      func(context.Context, identity.ExternalID) (identity.User, error)
 	measurements telemetry.Measurements
 	mediaLimits  media.Limits
+	emojiLimits  emoji.Limits
 }
 
 func NewAPI(
@@ -40,7 +42,7 @@ func NewAPI(
 	resolve func(context.Context, identity.ExternalID) (identity.User, error),
 ) *API {
 	mux := http.NewServeMux()
-	api := &API{mux: mux, verify: verify, resolve: resolve, mediaLimits: media.DefaultLimits()}
+	api := &API{mux: mux, verify: verify, resolve: resolve, mediaLimits: media.DefaultLimits(), emojiLimits: emoji.DefaultLimits()}
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(openAPI)
@@ -152,9 +154,21 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 409, "idempotency_conflict")
 	case errors.Is(err, forum.ErrReference), errors.Is(err, conversation.ErrReference):
 		writeProblem(w, 422, "invalid_reference")
-	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid),
+	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid), errors.Is(err, emoji.ErrInvalid),
 		errors.Is(err, media.ErrDimensions), errors.Is(err, media.ErrDuration), errors.Is(err, media.ErrCorrupt):
 		writeProblem(w, 422, "invalid_input")
+	case errors.Is(err, emoji.ErrUnavailable):
+		writeProblem(w, 422, "invalid_emoji")
+	case errors.Is(err, emoji.ErrForbidden):
+		writeProblem(w, 403, "permission_denied")
+	case errors.Is(err, emoji.ErrNotFound):
+		writeProblem(w, 404, "resource_not_found")
+	case errors.Is(err, emoji.ErrNameTaken):
+		writeProblem(w, 409, "emoji_name_taken")
+	case errors.Is(err, emoji.ErrConflict):
+		writeProblem(w, 409, "idempotency_conflict")
+	case errors.Is(err, emoji.ErrLimit):
+		writeProblem(w, 409, "emoji_catalog_full")
 	case errors.Is(err, conversation.ErrAttachment):
 		writeProblem(w, 422, "attachment_rejected")
 	case errors.Is(err, media.ErrType):

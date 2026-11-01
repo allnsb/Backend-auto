@@ -34,7 +34,7 @@ func testReplyReferenceSnapshot(t *testing.T, ctx context.Context, owner, runtim
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := appendReply(ctx, writer, topicID, actor, rootDraft, rootKey, digest[:], state)
+	root, err := (&Forums{}).appendReply(ctx, writer, topicID, actor, rootDraft, rootKey, digest[:], state, "")
 	if err != nil {
 		t.Fatal(err)
 	}

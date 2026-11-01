@@ -23,6 +23,8 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 		"ODYSSEIA_R2_ACCESS_KEY_ID":           "test-access-key",
 		"ODYSSEIA_R2_SECRET_ACCESS_KEY":       "test-secret-key",
 		"ODYSSEIA_R2_BUCKET":                  "odysseia-attachments",
+		"ODYSSEIA_EMOJI_R2_BUCKET":            "odysseia-emoji",
+		"ODYSSEIA_EMOJI_PUBLIC_BASE_URL":      "https://emoji.invalid/custom",
 	} {
 		t.Setenv(key, value)
 	}
@@ -53,6 +55,9 @@ func TestWriteTransactionConfiguration(t *testing.T) {
 			}
 			if cfg.AttachmentMaxBytes != 10<<20 || cfg.AttachmentMaxEdge != 8192 || cfg.AttachmentMaxPixels != 16_777_216 || cfg.AttachmentMaxVoiceMS != 300_000 || cfg.AttachmentUploadsPerMinute != 10 || cfg.AttachmentQuotaBytes != 100<<20 || cfg.AttachmentPresignTTL.String() != "1m0s" || cfg.AttachmentMaxPerMessage != 4 || cfg.R2Region != "auto" {
 				t.Fatalf("attachment defaults = %+v", cfg)
+			}
+			if cfg.EmojiMaxBytes != 256*1024 || cfg.EmojiMaxEdge != 128 || cfg.EmojiR2Bucket != "odysseia-emoji" || cfg.EmojiR2AccountID != "abc123" || cfg.EmojiPublicBaseURL != "https://emoji.invalid/custom" || len(cfg.EmojiSiteOwnerIDs) != 0 {
+				t.Fatalf("emoji defaults = %+v", cfg)
 			}
 		})
 	}
