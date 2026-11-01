@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/semaphore"
 	"odysseia.local/backend/internal/forum"
 	"odysseia.local/backend/internal/telemetry"
@@ -19,11 +21,14 @@ const forumWriteWaitLimit = 2 * time.Second
 const forumWriteScopeLimit int64 = 1
 const forumWriteScopeQueueLimit = 12 // Active and waiting, within the global 256.
 
-// Creating topics/channels advances a forum counter; messages advance a stream counter.
-// Separate fields keep those namespaces distinct even if their UUIDs match.
+// Topics/channels use forum counters, messages stream counters, draft creation
+// an author key and draft edits a work key. The namespaces remain distinct even
+// when their UUID strings happen to match.
 type writeScope struct {
-	forumID  string
-	streamID string
+	forumID      string
+	streamID     string
+	workID       string
+	workAuthorID string
 }
 
 type writeCounter struct {
@@ -31,9 +36,10 @@ type writeCounter struct {
 	references int
 }
 
-// writeAdmission bounds one Forums instance before it acquires a transaction
-// connection. Database row locks remain the authority for ordering across nodes.
-type writeAdmission struct {
+// WriteBudget is shared by message and work-draft stores in one serving process
+// before they acquire write connections. It does not reserve connections for
+// reads, cover identity lookups or provide a distributed quota across nodes.
+type WriteBudget struct {
 	limit    int64
 	active   *semaphore.Weighted
 	pending  chan struct{}
@@ -42,14 +48,30 @@ type writeAdmission struct {
 	perScope int64
 }
 
-func newWriteAdmission(writers int64, pending int) *writeAdmission {
-	return &writeAdmission{
+func newWriteAdmission(writers int64, pending int) *WriteBudget {
+	return &WriteBudget{
 		limit: writers, active: semaphore.NewWeighted(writers), pending: make(chan struct{}, pending),
 		scopes: make(map[writeScope]*writeCounter), perScope: min(writers, forumWriteScopeLimit),
 	}
 }
 
-func (a *writeAdmission) acquire(ctx context.Context, key writeScope) (func(), error) {
+// NewWriteBudget preserves the existing automatic headroom policy (pool 16 ->
+// 10 writers). Pass one result to all command stores using that serving pool.
+func NewWriteBudget(pool *pgxpool.Pool, maxWriteTransactions int64) (*WriteBudget, error) {
+	if pool == nil || maxWriteTransactions < 0 || maxWriteTransactions > int64(pool.Config().MaxConns) {
+		return nil, fmt.Errorf("write budget requires a pool and a limit from zero (automatic) to its maximum")
+	}
+	if maxWriteTransactions == 0 {
+		maxWriteTransactions = defaultWriteLimit(int64(pool.Config().MaxConns))
+	}
+	return newWriteAdmission(maxWriteTransactions, forumWriteQueueLimit), nil
+}
+
+func defaultWriteLimit(poolLimit int64) int64 {
+	return max(int64(1), poolLimit-(poolLimit+2)/3)
+}
+
+func (a *WriteBudget) acquire(ctx context.Context, key writeScope) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		telemetry.Reject(ctx, telemetry.RequestCanceled)
 		return nil, err
@@ -103,7 +125,7 @@ func (a *writeAdmission) acquire(ctx context.Context, key writeScope) (func(), e
 
 // The admitted-command bound also bounds registry size. A counter is removed
 // after its final active/waiting caller exits; no TTL worker is needed.
-func (a *writeAdmission) retain(key writeScope) *writeCounter {
+func (a *WriteBudget) retain(key writeScope) *writeCounter {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	counter := a.scopes[key]

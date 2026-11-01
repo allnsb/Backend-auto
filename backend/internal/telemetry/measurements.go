@@ -25,10 +25,13 @@ const (
 	// AtomicMessageBatch covers message, optional forum relation and outbox;
 	// its duration cannot be compared to the former message-only write stage.
 	AtomicMessageBatch
+	// WorkDraftWrite covers draft SQL and any replay/conflict read after admission.
+	// It includes implicit pool acquisition, not a separately measured commit.
+	WorkDraftWrite
 	stageCount
 )
 
-var stageNames = [...]string{"token_verification", "identity_lookup", "access_check", "scope_wait", "global_wait", "pool_acquire", "transaction_begin", "stream_lock_observed", "idempotency_and_references", "message_write", "relation_and_outbox", "transaction_commit", "atomic_message_batch"}
+var stageNames = [...]string{"token_verification", "identity_lookup", "access_check", "scope_wait", "global_wait", "pool_acquire", "transaction_begin", "stream_lock_observed", "idempotency_and_references", "message_write", "relation_and_outbox", "transaction_commit", "atomic_message_batch", "work_draft_write"}
 
 type Rejection uint8
 

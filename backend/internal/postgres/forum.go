@@ -24,7 +24,7 @@ import (
 
 type Forums struct {
 	pool                    *pgxpool.Pool
-	writes                  *writeAdmission
+	writes                  *WriteBudget
 	pages                   *messagePageCache
 	conversationMemberLimit int
 	blobs                   blob.Store
@@ -42,11 +42,12 @@ func NewForums(pool *pgxpool.Pool) *Forums {
 	// Leave about a third of this shared pool outside the write budget for
 	// identity and reads (16 -> 10 writers). This is tunable headroom, not a
 	// separate reserved pool or a distributed quota. A pool of one has no reserve.
-	poolLimit := int64(pool.Config().MaxConns)
-	readReserve := (poolLimit + 2) / 3
-	writers := max(int64(1), poolLimit-readReserve)
+	return newForums(pool, newWriteAdmission(defaultWriteLimit(int64(pool.Config().MaxConns)), forumWriteQueueLimit))
+}
+
+func newForums(pool *pgxpool.Pool, budget *WriteBudget) *Forums {
 	return &Forums{
-		pool: pool, writes: newWriteAdmission(writers, forumWriteQueueLimit),
+		pool: pool, writes: budget,
 		conversationMemberLimit: conversation.MaxMembers,
 		mediaLimits:             media.DefaultLimits(),
 		uploadsPerMinute:        10,

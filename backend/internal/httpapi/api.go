@@ -16,6 +16,7 @@ import (
 	"odysseia.local/backend/internal/identity"
 	"odysseia.local/backend/internal/media"
 	"odysseia.local/backend/internal/telemetry"
+	"odysseia.local/backend/internal/work"
 )
 
 //go:embed openapi.json
@@ -142,7 +143,7 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 413, "body_too_large")
 	case errors.Is(err, errRequestTimeout):
 		writeProblem(w, 408, "request_timeout")
-	case errors.Is(err, forum.ErrNotFound), errors.Is(err, conversation.ErrNotFound):
+	case errors.Is(err, forum.ErrNotFound), errors.Is(err, conversation.ErrNotFound), errors.Is(err, work.ErrNotFound):
 		writeProblem(w, 404, "resource_not_found")
 	case errors.Is(err, forum.ErrForbidden), errors.Is(err, conversation.ErrForbidden):
 		writeProblem(w, 403, "permission_denied")
@@ -150,11 +151,13 @@ func writeAPIError(ctx context.Context, w http.ResponseWriter, err error) {
 		writeProblem(w, 409, "member_exists")
 	case errors.Is(err, forum.ErrLastManager), errors.Is(err, conversation.ErrLastManager):
 		writeProblem(w, 409, "last_manager")
-	case errors.Is(err, forum.ErrConflict), errors.Is(err, conversation.ErrConflict):
+	case errors.Is(err, work.ErrRevision):
+		writeProblem(w, 409, "work_revision_conflict")
+	case errors.Is(err, forum.ErrConflict), errors.Is(err, conversation.ErrConflict), errors.Is(err, work.ErrConflict):
 		writeProblem(w, 409, "idempotency_conflict")
 	case errors.Is(err, forum.ErrReference), errors.Is(err, conversation.ErrReference):
 		writeProblem(w, 422, "invalid_reference")
-	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid), errors.Is(err, emoji.ErrInvalid),
+	case errors.Is(err, forum.ErrInvalid), errors.Is(err, conversation.ErrInvalid), errors.Is(err, emoji.ErrInvalid), errors.Is(err, work.ErrInvalid),
 		errors.Is(err, media.ErrDimensions), errors.Is(err, media.ErrDuration), errors.Is(err, media.ErrCorrupt):
 		writeProblem(w, 422, "invalid_input")
 	case errors.Is(err, emoji.ErrUnavailable):

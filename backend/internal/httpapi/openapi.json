@@ -2,8 +2,8 @@
   "openapi": "3.2.1",
   "info": {
     "title": "ODYSSEIA Backend API",
-    "version": "0.9.1",
-    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Custom emoji are site-wide or per forum. A forum emoji can be sent only in topics and channels of that same forum. Conversations accept site emoji only. Messages cite them as <:name:id> or <a:name:id>. Bytes live in a public bucket separate from conversation attachments, with a content-hash key and Cache-Control immutable. Deleting an emoji keeps the object and rewrites later reads of that token to :name:. Connection JWTs grant identity only. Author and platform overrides, works, read receipts and production capacity remain separate stages."
+    "version": "0.10.0",
+    "description": "Member-only independent forums, threaded/chat topic layouts, persistent fixed chat channels, and direct/group conversations with text, image, and voice attachments. A valid access token bootstraps the local user. Identity groups and per-forum roles expose effective grants for UI gates; the highest-priority role supplies the only grants. Topic and channel writes still follow current forum membership and still require text. Direct conversations require a shared forum at creation. Group membership is separate from forum roles. Conversation events are published to each member's user-limited inbox channel; HTTPS history remains authoritative. Attachment bytes are uploaded through the API and downloaded by a short-lived presigned GET after a membership check. A separate sweep removes objects about 7 days after upload; bound attachments stay on the message with expired set, and download then returns 404. Custom emoji are site-wide or per forum. A forum emoji can be sent only in topics and channels of that same forum. Conversations accept site emoji only. Messages cite them as <:name:id> or <a:name:id>. Bytes live in a public bucket separate from conversation attachments, with a content-hash key and Cache-Control immutable. Deleting an emoji keeps the object and rewrites later reads of that token to :name:. Connection JWTs grant identity only. Author-private work drafts are independent of forums. Publishing, resource files, author/platform overrides, read receipts and production capacity remain separate stages."
   },
   "servers": [
     {
@@ -195,11 +195,11 @@
           "404": {
             "$ref": "#/components/responses/ResourceNotFound"
           },
-          "503": {
-            "$ref": "#/components/responses/Unavailable"
-          },
           "409": {
             "$ref": "#/components/responses/LastManager"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       },
@@ -239,11 +239,11 @@
           "403": {
             "$ref": "#/components/responses/PermissionDenied"
           },
-          "503": {
-            "$ref": "#/components/responses/Unavailable"
-          },
           "409": {
             "$ref": "#/components/responses/LastManager"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2692,6 +2692,259 @@
           }
         }
       }
+    },
+    "/v1/works": {
+      "post": {
+        "operationId": "createWorkDraft",
+        "description": "Creates an author-private current draft. Idempotency-Key is required. Exact replay returns 200 and the current row even after edits; a different original payload for that key returns 409 idempotency_conflict. No public access, forum membership, resource files or realtime events are created.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkDraft"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact creation replay; current draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Work"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created author-private draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Work"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/me/works": {
+      "get": {
+        "operationId": "listMyWorkDrafts",
+        "description": "Lists only the caller's current drafts, by immutable (created_at,id) descending. Editing does not reorder the list. Cursor is bound to this collection and author; it is encoded, not signed, and never replaces SQL authorization. next is absent on the last page.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An author-private page; items is an empty array when there are no drafts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/works/{work_id}": {
+      "get": {
+        "operationId": "getWorkDraft",
+        "description": "Author only. Missing and another author's draft both return 404, including for a directory owner. No administrator override is defined by this slice.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The author's current private draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Work"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateWorkDraft",
+        "description": "Replaces title and introduction using the last observed revision. Stale revision returns 409 work_revision_conflict; fetch and reconcile before retrying. Identical content with the current revision leaves revision and updated_at unchanged. Omitted introduction clears it. Author and status are server-owned; no publishing or historical resource version is created.",
+        "security": [
+          {
+            "accessToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current draft after a conditional update or identical-input no-op.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Work"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotFound"
+          },
+          "409": {
+            "description": "Stale revision: work_revision_conflict.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          },
+          "422": {
+            "$ref": "#/components/responses/InvalidInput"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2860,7 +3113,8 @@
               "emoji_name_taken",
               "emoji_catalog_full",
               "attachment_rejected",
-              "request_timeout"
+              "request_timeout",
+              "work_revision_conflict"
             ]
           }
         }
@@ -3899,6 +4153,122 @@
           "total": {
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$"
+          }
+        }
+      },
+      "WorkDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Plain text, valid UTF-8, no NUL or leading/trailing whitespace. Engineering input cap, not a product quota."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Plain text, valid UTF-8, no NUL; at most 32768 UTF-8 bytes. Omitted input means an empty introduction."
+          }
+        }
+      },
+      "WorkUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "revision"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Plain text, valid UTF-8, no NUL or leading/trailing whitespace. Engineering input cap, not a product quota."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Plain text, valid UTF-8, no NUL; at most 32768 UTF-8 bytes. Omitted input means an empty introduction."
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "Positive signed int64 decimal string. Concurrency revision, not a published resource version."
+          }
+        }
+      },
+      "Work": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "author_id",
+          "status",
+          "title",
+          "introduction",
+          "revision",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "author_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Plain text, valid UTF-8, no NUL or leading/trailing whitespace. Engineering input cap, not a product quota."
+          },
+          "introduction": {
+            "type": "string",
+            "description": "Plain text, valid UTF-8, no NUL; at most 32768 UTF-8 bytes. Omitted input means an empty introduction."
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "Positive signed int64 decimal string. Concurrency revision, not a published resource version."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Work"
+            }
+          },
+          "next": {
+            "type": "string",
+            "maxLength": 512
           }
         }
       }
