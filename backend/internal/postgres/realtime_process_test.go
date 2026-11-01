@@ -40,6 +40,30 @@ type realtimeSharedBroker struct {
 	Address, Password, Prefix string
 }
 
+// Load the deployed namespaces, including personal inbox security options.
+// Existing forum tests deliberately keep just two events to force fallback.
+func realtimeFixtureNamespaces(t *testing.T) []map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "deploy", "realtime", "config.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Channel struct {
+			Namespaces []map[string]any `json:"namespaces"`
+		} `json:"channel"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	for _, namespace := range config.Channel.Namespaces {
+		if namespace["name"] != "inbox" {
+			namespace["history_size"] = 2
+		}
+	}
+	return config.Channel.Namespaces
+}
+
 func startRealtimeProcess(t *testing.T, ctx context.Context, dsn, connectionKey, proxyKey, proxyURL string, broker *realtimeSharedBroker) *realtimeProcess {
 	t.Helper()
 	binary := os.Getenv("ODYSSEIA_TEST_CENTRIFUGO_BINARY")
@@ -71,7 +95,7 @@ func startRealtimeProcess(t *testing.T, ctx context.Context, dsn, connectionKey,
 		"log":         map[string]any{"level": "error"},
 		"http_server": map[string]any{"address": "127.0.0.1", "port": port, "tls": map[string]any{"enabled": true, "cert_pem": filepath.Join(tlsDir, "server.crt"), "key_pem": filepath.Join(tlsDir, "server.key")}},
 		"client":      map[string]any{"token": map[string]any{"hmac_secret_key": connectionKey}, "disallow_anonymous_connection_tokens": true, "expired_close_delay": "1s", "allowed_origins": []string{"https://localhost"}},
-		"channel":     map[string]any{"proxy": map[string]any{"subscribe": map[string]any{"endpoint": proxyURL, "timeout": "2s", "http": map[string]any{"static_headers": map[string]string{"X-Odysseia-Proxy-Key": proxyKey}, "tls": map[string]any{"enabled": true, "server_ca_pem": filepath.Join(tlsDir, "ca.crt")}}}}, "namespaces": []any{map[string]any{"name": "forum", "history_size": 2, "history_ttl": "60s", "force_recovery": true, "force_positioning": true, "subscribe_proxy_enabled": true}, map[string]any{"name": "topic", "history_size": 2, "history_ttl": "60s", "force_recovery": true, "force_positioning": true, "subscribe_proxy_enabled": true}, map[string]any{"name": "channel", "history_size": 2, "history_ttl": "60s", "force_recovery": true, "force_positioning": true, "subscribe_proxy_enabled": true}}},
+		"channel":     map[string]any{"proxy": map[string]any{"subscribe": map[string]any{"endpoint": proxyURL, "timeout": "2s", "http": map[string]any{"static_headers": map[string]string{"X-Odysseia-Proxy-Key": proxyKey}, "tls": map[string]any{"enabled": true, "server_ca_pem": filepath.Join(tlsDir, "ca.crt")}}}}, "namespaces": realtimeFixtureNamespaces(t)},
 		"consumers":   []any{map[string]any{"enabled": true, "name": "odysseia_outbox", "type": "postgresql", "postgresql": map[string]any{"dsn": dsn, "outbox_table_name": "odysseia.realtime_outbox", "num_partitions": 5, "partition_poll_interval": "20ms"}}},
 	}
 	if broker != nil {
