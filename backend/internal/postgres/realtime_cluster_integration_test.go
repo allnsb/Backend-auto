@@ -134,6 +134,7 @@ type clusterPeer struct {
 	ready                  chan centrifuge.SubscribedEvent
 	messages               chan centrifuge.PublicationEvent
 	transportLost, revoked chan centrifuge.ConnectingEvent
+	subscription           *centrifuge.Subscription
 }
 
 func newClusterPeer(t *testing.T, node *realtimeProcess, token, channel string, since *centrifuge.StreamPosition) *clusterPeer {
@@ -151,6 +152,9 @@ func newClusterPeer(t *testing.T, node *realtimeProcess, token, channel string, 
 	})
 	config := centrifuge.SubscriptionConfig{Recoverable: true, Positioned: true}
 	if since != nil {
+		// Seed a known-valid cursor for cross-node recovery. This fixture's
+		// constant callback is not a production GetState implementation: an
+		// expired cursor needs a fresh application snapshot, not endless reuse.
 		position := *since
 		config.GetState = func(centrifuge.SubscriptionGetStateEvent) (centrifuge.StreamPosition, error) { return position, nil }
 	}
@@ -158,6 +162,7 @@ func newClusterPeer(t *testing.T, node *realtimeProcess, token, channel string, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	p.subscription = sub
 	sub.OnSubscribed(func(e centrifuge.SubscribedEvent) { p.ready <- e })
 	sub.OnPublication(func(e centrifuge.PublicationEvent) { p.messages <- e })
 	if err := sub.Subscribe(); err != nil {
